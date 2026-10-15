@@ -6,6 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
+    <meta name="color-scheme" content="dark light" />
     <title>Ledgerline — Personal Finance</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,7 +17,8 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="wrap">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <div class="wrap" id="main">
       <header>
         <div class="brand">
           <span class="logo" aria-hidden="true">₨</span>
@@ -26,12 +28,82 @@
           </div>
         </div>
         <div class="hbtns">
+          <button
+            class="btn"
+            id="themeToggle"
+            type="button"
+            aria-label="Toggle theme"
+            aria-pressed="false"
+          >
+            🌙
+          </button>
+          <button class="btn" id="backup" type="button">Backup JSON</button>
+          <button class="btn" id="restore" type="button">Restore</button>
+          <input
+            type="file"
+            id="restoreFile"
+            accept="application/json,.json"
+            hidden
+          />
           <button class="btn" id="csv" type="button">Export CSV</button>
           <button class="btn danger-ghost" id="clearData" type="button">
             Clear data
           </button>
         </div>
       </header>
+
+      <!-- Safe-to-Spend -->
+      <section class="panel sts-panel" aria-labelledby="stsH">
+        <div class="sts-head">
+          <div>
+            <h2 id="stsH">💸 Safe to Spend</h2>
+            <p class="muted">How much you can spend before your next income</p>
+          </div>
+          <button
+            class="btn"
+            id="stsSettings"
+            type="button"
+            aria-expanded="false"
+            aria-controls="stsConfig"
+          >
+            Settings
+          </button>
+        </div>
+        <div class="sts-body">
+          <div class="sts-big">
+            <span id="stsAmount">—</span>
+            <small id="stsSub" class="muted">Add income to calculate</small>
+          </div>
+          <div class="sts-details" id="stsDetails"></div>
+        </div>
+        <div class="sts-config" id="stsConfig" hidden>
+          <label>
+            <span>Next income date</span>
+            <input type="date" id="stsNextIncomeDate" />
+          </label>
+          <label>
+            <span>Expected income (₹)</span>
+            <input
+              type="number"
+              id="stsNextIncome"
+              min="0"
+              step="1"
+              placeholder="0"
+            />
+          </label>
+          <label>
+            <span>Savings goal this period (₹)</span>
+            <input
+              type="number"
+              id="stsSavingsGoal"
+              min="0"
+              step="1"
+              placeholder="0"
+            />
+          </label>
+          <button class="btn primary" id="stsSave" type="button">Save</button>
+        </div>
+      </section>
 
       <!-- Budget overview -->
       <section class="panel budget-panel" aria-labelledby="budgetH">
@@ -86,21 +158,66 @@
           <span>Budget remaining</span><b id="sBudgetLeft">₹0</b>
         </div>
       </div>
-      
-  <!-- Smart Money Insights -->
-<section class="panel insights-panel" aria-labelledby="insightsTitle">
-  <div class="insights-heading">
-    <div>
-      <h2 id="insightsTitle">✨ Smart Money Insights</h2>
-      <p class="muted">Personalized insights based on your transactions</p>
-    </div>
-    <span class="insights-tag">SMART</span>
-  </div>
 
-  <div id="insightsList" class="insights-grid" aria-live="polite">
-    <p class="muted">Analyzing your finances...</p>
-  </div>
-</section>
+      <!-- Smart Money Insights -->
+      <section class="panel insights-panel" aria-labelledby="insightsTitle">
+        <div class="insights-heading">
+          <div>
+            <h2 id="insightsTitle">✨ Smart Money Insights</h2>
+            <p class="muted">
+              Personalized insights based on your transactions
+            </p>
+          </div>
+          <span class="insights-tag">SMART</span>
+        </div>
+        <div id="insightsList" class="insights-grid" aria-live="polite">
+          <p class="muted">Analyzing your finances...</p>
+        </div>
+      </section>
+
+      <!-- Recurring -->
+      <section class="panel" aria-labelledby="recH">
+        <div class="chart-head">
+          <h2 id="recH">🔁 Recurring &amp; upcoming</h2>
+          <button class="btn" id="addRecurring" type="button">
+            Add recurring
+          </button>
+        </div>
+        <p class="hint muted">
+          Track subscriptions, rent, and regular income. These appear as
+          upcoming reminders — they are not auto-charged.
+        </p>
+        <div class="recurring-form" id="recurringForm" hidden>
+          <input
+            id="recDesc"
+            placeholder="e.g. Netflix"
+            maxlength="60"
+            aria-label="Recurring description"
+          />
+          <input
+            id="recAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Amount (₹)"
+            aria-label="Recurring amount"
+          />
+          <select id="recType" aria-label="Recurring type">
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+          <select id="recCat" aria-label="Recurring category"></select>
+          <select id="recFreq" aria-label="Frequency">
+            <option value="weekly">Weekly</option>
+            <option value="monthly" selected>Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+          <input id="recNext" type="date" aria-label="Next occurrence" />
+          <button class="btn primary" id="recSave" type="button">Save</button>
+          <button class="btn" id="recCancel" type="button">Cancel</button>
+        </div>
+        <div class="recurring-grid" id="recurringGrid"></div>
+      </section>
 
       <!-- Charts -->
       <section class="panel" aria-labelledby="trendH">
@@ -115,7 +232,7 @@
           <canvas
             id="trend"
             role="img"
-            aria-label="Monthly expense trend for the selected year. Y-axis scale is based on the highest monthly income."
+            aria-label="Monthly expense trend for the selected year."
           ></canvas>
         </div>
         <div class="trend-stats" id="trendStats"></div>
@@ -147,7 +264,6 @@
                 Income
               </button>
             </div>
-
             <div class="field full">
               <input
                 id="desc"
@@ -159,7 +275,6 @@
               />
               <p class="err" id="err-desc" role="alert"></p>
             </div>
-
             <div class="field">
               <input
                 id="amount"
@@ -173,7 +288,6 @@
               />
               <p class="err" id="err-amount" role="alert"></p>
             </div>
-
             <div class="field">
               <input
                 id="date"
@@ -183,7 +297,6 @@
               />
               <p class="err" id="err-date" role="alert"></p>
             </div>
-
             <div
               class="chips full"
               id="catchips"
@@ -191,7 +304,6 @@
               aria-label="Category"
             ></div>
             <p class="preview full" id="preview" aria-live="polite"></p>
-
             <button class="btn primary full" type="submit" id="submitBtn">
               Add transaction
             </button>
@@ -245,8 +357,31 @@
             placeholder="Search description (press /)"
             aria-label="Search transactions"
           />
+          <label class="filter-range">
+            <span class="muted">Min ₹</span>
+            <input
+              id="fmin"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0"
+              aria-label="Minimum amount"
+            />
+          </label>
+          <label class="filter-range">
+            <span class="muted">Max ₹</span>
+            <input
+              id="fmax"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="∞"
+              aria-label="Maximum amount"
+            />
+          </label>
           <button class="btn" type="button" id="resetFilters">Reset</button>
         </div>
+        <p class="filter-summary muted" id="txSummary" aria-live="polite"></p>
         <div class="tablewrap">
           <table>
             <thead>
@@ -286,7 +421,6 @@
     >
       ?
     </button>
-
     <section class="bot" id="bot" hidden aria-label="Help assistant">
       <div class="bot-head">
         <b>Ledgerline help</b
@@ -305,7 +439,7 @@
       </form>
     </section>
 
-    <!-- Warning modal (used for both income and budget warnings) -->
+    <!-- Modal -->
     <div class="modal-backdrop" id="modal" hidden>
       <div
         class="modal"
@@ -326,8 +460,7 @@
       </div>
     </div>
 
-    <div class="toasts" id="toasts" aria-live="polite"></div>
-
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
   </body>
 </html>
