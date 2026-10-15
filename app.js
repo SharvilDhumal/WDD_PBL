@@ -1066,12 +1066,148 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
     showToast("Exported " + list.length + " transactions for " + monthLabel(month));
   }
+   
+function renderInsights() {
+  var host = $("insightsList");
+  if (!host) return;
+
+  var month = $("month").value || thisMonth;
+  var current = txsForMonth(month);
+
+  var date = new Date(
+    Number(month.slice(0, 4)),
+    Number(month.slice(5, 7)) - 1,
+    1
+  );
+  date.setMonth(date.getMonth() - 1);
+
+  var previousMonth = iso(date).slice(0, 7);
+  var previous = txsForMonth(previousMonth);
+
+  var spent = sumByType(current, "expense");
+  var previousSpent = sumByType(previous, "expense");
+  var income = sumByType(current, "income");
+  var cards = [];
+
+  // 1. Monthly budget insight
+  if (state.budget > 0) {
+    var pct = Math.round(spent / state.budget * 100);
+
+    if (pct >= 100) {
+      cards.push({
+        icon: "🚨",
+        title: "Budget exceeded",
+        message: "You have used " + pct +
+          "% of your monthly budget.",
+        tone: "warning"
+      });
+    } else if (pct >= 75) {
+      cards.push({
+        icon: "⚠️",
+        title: "Budget warning",
+        message: "You have used " + pct +
+          "% of your monthly budget.",
+        tone: "warning"
+      });
+    } else {
+      cards.push({
+        icon: "✅",
+        title: "Budget status",
+        message: "You have used " + pct +
+          "% of your monthly budget.",
+        tone: "good"
+      });
+    }
+  } else {
+    cards.push({
+      icon: "🎯",
+      title: "Set a monthly budget",
+      message: "Choose a budget to start tracking your spending limit.",
+      tone: "info"
+    });
+  }
+
+  // 2. Compare spending with the previous month
+  if (previous.length > 0) {
+    if (previousSpent > 0) {
+      var change = Math.round(
+        ((spent - previousSpent) / previousSpent) * 100
+      );
+
+      if (change > 0) {
+        cards.push({
+          icon: "📈",
+          title: "Spending increased",
+          message: "Your expenses are " + change +
+            "% higher than last month.",
+          tone: "warning"
+        });
+      } else if (change < 0) {
+        cards.push({
+          icon: "📉",
+          title: "Spending decreased",
+          message: "Your expenses are " + Math.abs(change) +
+            "% lower than last month.",
+          tone: "good"
+        });
+      } else {
+        cards.push({
+          icon: "📊",
+          title: "Spending unchanged",
+          message: "Your total expenses match last month.",
+          tone: "info"
+        });
+      }
+    } else if (spent > 0) {
+      cards.push({
+        icon: "📊",
+        title: "New spending activity",
+        message: "You recorded expenses this month, but none last month.",
+        tone: "info"
+      });
+    }
+  }
+
+  // 3. Savings insight
+  if (income > 0) {
+    var net = income - spent;
+    var rate = Math.round((net / income) * 100);
+
+    cards.push({
+      icon: net >= 0 ? "💰" : "💡",
+      title: net >= 0 ? "Savings progress" : "Spending exceeds income",
+      message: net >= 0
+        ? "Your savings rate is " + rate + "% this month."
+        : "Your expenses are higher than your recorded income.",
+      tone: net >= 0 ? "good" : "warning"
+    });
+  }
+
+  if (cards.length === 0) {
+    cards.push({
+      icon: "📝",
+      title: "Start tracking",
+      message: "Add transactions to unlock your financial insights.",
+      tone: "info"
+    });
+  }
+
+  host.innerHTML = cards.map(function (card) {
+    return '<article class="insight-card ' + card.tone + '">' +
+      '<span class="insight-icon" aria-hidden="true">' +
+      card.icon + '</span>' +
+      '<h3>' + card.title + '</h3>' +
+      '<p>' + card.message + '</p>' +
+      '</article>';
+  }).join("");
+}
 
   /* ============================================================
      Refresh orchestration
   ============================================================ */
   function refreshAll() {
     renderStats();
+    renderInsights();
     drawChart();
     renderTrend();
     renderCategoryBudgets();

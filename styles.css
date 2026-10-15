@@ -1012,3 +1012,85 @@ tr.leaving {
     transition: none !important;
   }
 }
+
+/* Smart Money Insights */
+.insights-panel {
+  margin: 18px 0;
+}
+
+.insights-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.insights-heading h2 {
+  margin-bottom: 5px;
+}
+
+.insights-tag {
+  color: var(--accent-2);
+  background: rgba(109, 141, 255, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.insight-card {
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.insight-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.insight-card h3 {
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.insight-card p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.insight-icon {
+  font-size: 23px;
+}
+
+.insight-card.warning {
+  border-left: 3px solid var(--warn);
+}
+
+.insight-card.good {
+  border-left: 3px solid var(--good);
+}
+
+.insight-card.info {
+  border-left: 3px solid var(--accent);
+}
+
+@media (max-width: 760px) {
+  .insights-grid {
+    grid-template-columns: 1fr;
+  }
+}
