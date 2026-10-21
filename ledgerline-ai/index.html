@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Ledgerline — a precise personal finance dashboard for income, spending, budgets and safe-to-spend planning."
+    />
+    <title>Ledgerline — Personal Finance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+
+    <div class="app">
+      <!-- ================= Sidebar ================= -->
+      <aside class="rail" aria-label="Primary">
+        <a class="rail-brand" href="#main" aria-label="Ledgerline home">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M5 4h4v13h7v3H5z" fill="currentColor" />
+            <circle
+              cx="17.5"
+              cy="6.5"
+              r="2.5"
+              fill="currentColor"
+              opacity="0.55"
+            />
+          </svg>
+          <span class="rail-brand-name">Ledgerline</span>
+        </a>
+        <nav class="rail-nav">
+          <a
+            href="#overview"
+            class="rail-link"
+            data-nav="overview"
+            aria-label="Dashboard"
+            title="Dashboard"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+            </svg>
+            <span>Dashboard</span>
+          </a>
+          <a
+            href="#section-charts"
+            class="rail-link"
+            data-nav="charts"
+            aria-label="Analytics"
+            title="Analytics"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 20V10M10 20V4M16 20v-7M22 20H2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span>Analytics</span>
+          </a>
+          <a
+            href="#section-transactions"
+            class="rail-link"
+            data-nav="transactions"
+            aria-label="Transactions"
+            title="Transactions"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 6h16M4 12h16M4 18h10"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span>Transactions</span>
+          </a>
+          <a
+            href="#section-budgets"
+            class="rail-link"
+            data-nav="budgets"
+            aria-label="Budgets"
+            title="Budgets"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r="8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <path
+                d="M12 4v8l6 3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span>Budgets</span>
+          </a>
+          <a
+            href="#section-goals"
+            class="rail-link"
+            data-nav="goals"
+            aria-label="Goals"
+            title="Goals"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r="9"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <circle
+                cx="12"
+                cy="12"
+                r="5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+            </svg>
+            <span>Goals</span>
+          </a>
+        </nav>
+
+        <button
+          class="rail-link rail-ai"
+          id="aiOpen"
+          type="button"
+          aria-label="Open Ledgerline AI assistant"
+          aria-expanded="false"
+          aria-controls="aiPanel"
+          title="Ledgerline AI"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path
+              d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"
+              fill="currentColor"
+            />
+            <circle cx="18" cy="17" r="1.6" fill="currentColor" opacity="0.7" />
+          </svg>
+          <span>AI Assistant</span>
+        </button>
+      </aside>
+
+      <div class="wrap" id="main">
+        <!-- ================= Header ================= -->
+        <header class="topbar">
+          <div class="brand">
+            <div class="brand-text">
+              <h1>Dashboard</h1>
+              <p class="sub" id="viewingLabel">Viewing —</p>
+            </div>
+          </div>
+          <div class="hbtns" role="toolbar" aria-label="Data actions">
+            <input
+              id="q"
+              class="header-search"
+              type="search"
+              placeholder="Search transactions  /"
+              aria-label="Search transactions"
+            />
+            <button
+              class="btn ghost"
+              id="backup"
+              type="button"
+              title="Backup JSON"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              Backup
+            </button>
+            <button
+              class="btn ghost"
+              id="restore"
+              type="button"
+              title="Restore JSON"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 21V9m0 0-4 4m4-4 4 4M4 7V4h16v3"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              Restore
+            </button>
+            <input
+              type="file"
+              id="restoreFile"
+              accept="application/json,.json"
+              hidden
+            />
+            <button class="btn ghost" id="csv" type="button" title="Export CSV">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 4h16v16H4zM4 10h16M10 4v16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                />
+              </svg>
+              CSV
+            </button>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <button class="btn ghost danger-ghost" id="clearData" type="button">
+              Clear data
+            </button>
+          </div>
+        </header>
+
+        <!-- ================= Overview ================= -->
+        <section id="overview" class="overview" aria-labelledby="overviewH">
+          <h2 id="overviewH" class="sr">Overview</h2>
+
+          <!-- Summary cards -->
+          <div class="summary-grid">
+            <div class="summary-cell">
+              <div class="summary-top">
+                <span class="summary-label">Total Income</span>
+                <span class="summary-icon inc">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M12 19V5m0 0-6 6m6-6 6 6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <b class="summary-value inc" id="sInc">₹0</b>
+              <span class="summary-note muted" id="sRate">—</span>
+            </div>
+            <div class="summary-cell">
+              <div class="summary-top">
+                <span class="summary-label">Total Expenses</span>
+                <span class="summary-icon exp">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M12 5v14m0 0 6-6m-6 6-6-6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <b class="summary-value exp" id="sExp">₹0</b>
+              <span class="summary-note muted" id="sExpNote">—</span>
+            </div>
+            <div class="summary-cell">
+              <div class="summary-top">
+                <span class="summary-label">Net Savings</span>
+                <span class="summary-icon accent">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3 17l6-6 4 4 8-8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <b class="summary-value" id="sNet">₹0</b>
+              <span class="summary-note muted" id="sNetNote">—</span>
+            </div>
+            <div class="summary-cell">
+              <div class="summary-top">
+                <span class="summary-label">Remaining Budget</span>
+                <span class="summary-icon cyan">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                    />
+                    <path
+                      d="M12 8v4l3 2"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <b class="summary-value" id="sBudgetLeft">₹0</b>
+              <div class="summary-mini-track" aria-hidden="true">
+                <i id="summaryBudgetFill"></i>
+              </div>
+              <span class="summary-note muted" id="sBudgetNote"
+                >Set a monthly budget</span
+              >
+            </div>
+          </div>
+
+          <!-- Safe to spend (compact) -->
+          <section class="sts-card" aria-labelledby="stsH">
+            <h2 id="stsH" class="sr">Safe to Spend</h2>
+            <div class="sts-main">
+              <div class="sts-eyebrow">
+                <span class="eyebrow-dot"></span>
+                Safe to Spend
+              </div>
+              <div class="sts-amount-wrap">
+                <span class="sts-amount" id="stsAmount">—</span>
+                <span class="sts-unit muted">/ day</span>
+              </div>
+              <p class="sts-sub muted" id="stsSub">
+                Add income or set expected income to calculate
+              </p>
+              <div class="sts-actions">
+                <button
+                  class="btn primary-soft"
+                  id="stsSettings"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="stsConfig"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="3"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.7"
+                    />
+                    <path
+                      d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"
+                      stroke="currentColor"
+                      stroke-width="1.7"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                  Configure
+                </button>
+              </div>
+            </div>
+            <div class="sts-side">
+              <div class="sts-details" id="stsDetails"></div>
+            </div>
+            <div class="sts-config" id="stsConfig" hidden>
+              <label class="field">
+                <span class="field-label">Next income date</span>
+                <input type="date" id="stsNextIncomeDate" />
+              </label>
+              <label class="field">
+                <span class="field-label">Expected income (₹)</span>
+                <input
+                  type="number"
+                  id="stsNextIncome"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  inputmode="numeric"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">Savings goal this period (₹)</span>
+                <input
+                  type="number"
+                  id="stsSavingsGoal"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  inputmode="numeric"
+                />
+              </label>
+              <div class="sts-config-actions">
+                <button class="btn primary" id="stsSave" type="button">
+                  Save settings
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Budget card -->
+          <section class="budget-card" aria-labelledby="budgetH">
+            <div class="budget-head">
+              <div>
+                <h2 id="budgetH" class="section-title">Monthly budget</h2>
+                <p class="section-sub muted" id="budgetMeta">
+                  Set a monthly spending limit to track progress.
+                </p>
+              </div>
+              <label class="budget-edit">
+                <span class="field-label">Limit (₹)</span>
+                <input
+                  id="budget"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="0"
+                  aria-label="Monthly budget amount"
+                />
+              </label>
+            </div>
+            <div class="budget-body">
+              <div class="budget-remaining">
+                <span class="budget-big" id="left">—</span>
+                <small id="leftlbl" class="muted"
+                  >Set a monthly budget to start tracking</small
+                >
+              </div>
+              <div class="budget-track-wrap">
+                <div
+                  class="track"
+                  id="bar"
+                  role="progressbar"
+                  aria-label="Budget used"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow="0"
+                >
+                  <div class="fill" id="fill"></div>
+                </div>
+                <div class="track-scale" aria-hidden="true">
+                  <span>0%</span><span>50%</span><span>100%</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <!-- ================= Insights ================= -->
+        <section class="insights" aria-labelledby="insightsTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="insightsTitle" class="section-title">Insights</h2>
+              <p class="section-sub muted">
+                Observations generated from your recorded transactions.
+              </p>
+            </div>
+          </div>
+          <div id="insightsList" class="insights-grid" aria-live="polite"></div>
+        </section>
+
+        <!-- ================= Charts row ================= -->
+        <section id="section-charts" class="analytics" aria-labelledby="trendH">
+          <div class="section-head">
+            <div>
+              <h2 id="trendH" class="section-title">Expense trends</h2>
+              <p class="section-sub muted">
+                Monthly expense versus income across the selected year.
+              </p>
+            </div>
+            <label class="year-pick">
+              <span class="field-label">Year</span>
+              <select id="year" aria-label="Select year"></select>
+            </label>
+          </div>
+          <div class="trend-wrap">
+            <canvas
+              id="trend"
+              role="img"
+              aria-label="Monthly expense trend for the selected year."
+            ></canvas>
+          </div>
+          <div class="trend-stats" id="trendStats"></div>
+        </section>
+
+        <!-- ================= Duo: add form + breakdown ================= -->
+        <div class="duo-grid">
+          <section class="panel" aria-labelledby="addH">
+            <h2 id="addH" class="section-title">Add a transaction</h2>
+            <form id="form" novalidate>
+              <div
+                class="seg full"
+                role="radiogroup"
+                aria-label="Transaction type"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked="true"
+                  data-type="expense"
+                >
+                  Expense
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked="false"
+                  data-type="income"
+                >
+                  Income
+                </button>
+              </div>
+              <div class="field full">
+                <label class="field-label" for="desc">Description</label>
+                <input
+                  id="desc"
+                  placeholder="e.g. Groceries"
+                  maxlength="60"
+                  autocomplete="off"
+                  aria-describedby="err-desc"
+                />
+                <p class="err" id="err-desc" role="alert"></p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="amount">Amount (₹)</label>
+                <input
+                  id="amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  inputmode="decimal"
+                  aria-describedby="err-amount"
+                />
+                <p class="err" id="err-amount" role="alert"></p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="date">Date</label>
+                <input id="date" type="date" aria-describedby="err-date" />
+                <p class="err" id="err-date" role="alert"></p>
+              </div>
+              <div class="field full">
+                <span class="field-label">Category</span>
+                <div
+                  class="chips"
+                  id="catchips"
+                  role="group"
+                  aria-label="Category"
+                ></div>
+              </div>
+              <p class="preview full" id="preview" aria-live="polite"></p>
+              <div class="form-actions full">
+                <button class="btn primary" type="submit" id="submitBtn">
+                  Add transaction
+                </button>
+                <button class="btn ghost hidden" type="button" id="cancelEdit">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel" aria-labelledby="catH">
+            <h2 id="catH" class="section-title">Spending breakdown</h2>
+            <div class="chart-box">
+              <div class="chart-wrap">
+                <canvas
+                  id="chart"
+                  role="img"
+                  aria-label="Spending by category"
+                ></canvas>
+              </div>
+              <ul class="legend" id="legend"></ul>
+            </div>
+            <p class="hint muted">
+              Hover a slice for detail. Click a category to filter the table.
+            </p>
+          </section>
+        </div>
+
+        <!-- ================= Recurring ================= -->
+        <section class="panel" aria-labelledby="recH">
+          <div class="section-head">
+            <div>
+              <h2 id="recH" class="section-title">Recurring &amp; upcoming</h2>
+              <p class="section-sub muted">
+                Subscriptions, rent and regular income. Reminders only — nothing
+                is charged automatically.
+              </p>
+            </div>
+            <button class="btn" id="addRecurring" type="button">
+              Add recurring
+            </button>
+          </div>
+          <div class="recurring-form" id="recurringForm" hidden>
+            <input
+              id="recDesc"
+              placeholder="Description (e.g. Netflix)"
+              maxlength="60"
+              aria-label="Recurring description"
+            />
+            <input
+              id="recAmount"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount (₹)"
+              aria-label="Recurring amount"
+              inputmode="decimal"
+            />
+            <select id="recType" aria-label="Recurring type">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+            <select id="recCat" aria-label="Recurring category"></select>
+            <select id="recFreq" aria-label="Frequency">
+              <option value="weekly">Weekly</option>
+              <option value="monthly" selected>Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <input id="recNext" type="date" aria-label="Next occurrence" />
+            <div class="recurring-form-actions">
+              <button class="btn primary" id="recSave" type="button">
+                Save
+              </button>
+              <button class="btn ghost" id="recCancel" type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div class="recurring-grid" id="recurringGrid"></div>
+        </section>
+
+        <!-- ================= Category budgets ================= -->
+        <section id="section-budgets" class="panel" aria-labelledby="catBH">
+          <div class="section-head">
+            <div>
+              <h2 id="catBH" class="section-title">Category budgets</h2>
+              <p class="section-sub muted">
+                Optional per-category monthly targets. Leave blank to disable.
+              </p>
+            </div>
+          </div>
+          <div class="catbudget-grid" id="catBudgets"></div>
+        </section>
+
+        <!-- ================= Goals ================= -->
+        <section id="section-goals" class="panel" aria-labelledby="goalsH">
+          <div class="section-head">
+            <div>
+              <h2 id="goalsH" class="section-title">Financial goals</h2>
+              <p class="section-sub muted">
+                Track progress toward your savings targets.
+              </p>
+            </div>
+            <button class="btn" id="addGoal" type="button">Add goal</button>
+          </div>
+          <div class="goal-form" id="goalForm" hidden>
+            <input
+              id="goalName"
+              placeholder="Goal name (e.g. Emergency fund)"
+              maxlength="60"
+              aria-label="Goal name"
+            />
+            <input
+              id="goalSaved"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="Saved (₹)"
+              aria-label="Saved amount"
+              inputmode="numeric"
+            />
+            <input
+              id="goalTarget"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="Target (₹)"
+              aria-label="Target amount"
+              inputmode="numeric"
+            />
+            <input
+              id="goalDate"
+              type="date"
+              aria-label="Target date (optional)"
+            />
+            <div class="goal-form-actions">
+              <button class="btn primary" id="goalSave" type="button">
+                Save
+              </button>
+              <button class="btn ghost" id="goalCancel" type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div class="goal-grid" id="goalGrid"></div>
+        </section>
+
+        <!-- ================= Transactions ================= -->
+        <section id="section-transactions" class="panel" aria-labelledby="txH">
+          <div class="section-head">
+            <div>
+              <h2 id="txH" class="section-title">Transactions</h2>
+              <p
+                class="section-sub muted"
+                id="txSummary"
+                aria-live="polite"
+              ></p>
+            </div>
+          </div>
+          <div class="filters">
+            <input id="month" type="month" aria-label="Month" />
+            <select id="ftype" aria-label="Filter by type">
+              <option value="">All types</option>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+            <select id="fcat" aria-label="Filter by category"></select>
+            <label class="filter-range">
+              <span class="muted">Min ₹</span>
+              <input
+                id="fmin"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0"
+                aria-label="Minimum amount"
+                inputmode="numeric"
+              />
+            </label>
+            <label class="filter-range">
+              <span class="muted">Max ₹</span>
+              <input
+                id="fmax"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="∞"
+                aria-label="Maximum amount"
+                inputmode="numeric"
+              />
+            </label>
+            <button class="btn ghost" type="button" id="resetFilters">
+              Reset
+            </button>
+          </div>
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th aria-sort="descending">
+                    <button type="button" data-sort="date">Date</button>
+                  </th>
+                  <th aria-sort="none">
+                    <button type="button" data-sort="desc">Description</button>
+                  </th>
+                  <th aria-sort="none">
+                    <button type="button" data-sort="cat">Category</button>
+                  </th>
+                  <th class="amt" aria-sort="none">
+                    <button type="button" data-sort="amount">Amount</button>
+                  </th>
+                  <th><span class="sr">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <p class="empty" id="empty">
+            No transactions yet. Add your first one above.
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <!-- ============ Ledgerline AI panel ============ -->
+    <section
+      class="ai-panel"
+      id="aiPanel"
+      hidden
+      aria-label="Ledgerline AI assistant"
+      role="dialog"
+      aria-modal="false"
+    >
+      <header class="ai-head">
+        <div class="ai-brand">
+          <span class="ai-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path
+                d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"
+                fill="currentColor"
+              />
+            </svg>
+          </span>
+          <div>
+            <b class="ai-title">Ledgerline AI</b>
+            <span class="ai-status" id="aiStatus">
+              <span class="ai-dot"></span><span id="aiStatusText">Ready</span>
+            </span>
+          </div>
+        </div>
+        <div class="ai-head-actions">
+          <button class="btn ghost small" id="aiNewChat" type="button">
+            New chat
+          </button>
+          <button
+            class="ai-close"
+            id="aiClose"
+            type="button"
+            aria-label="Close assistant"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M6 6l12 12M18 6 6 18"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="ai-log" id="aiLog" aria-live="polite"></div>
+      <div class="ai-suggest" id="aiSuggest"></div>
+
+      <form class="ai-form" id="aiForm">
+        <label class="sr" for="aiInput">Message Ledgerline AI</label>
+        <textarea
+          id="aiInput"
+          rows="1"
+          placeholder="Ask about your spending, budgets, Safe to Spend…"
+          maxlength="2000"
+          aria-label="Message Ledgerline AI"
+        ></textarea>
+        <button class="btn primary small" type="submit" id="aiSend" disabled>
+          Send
+        </button>
+      </form>
+    </section>
+
+    <!-- Modal -->
+    <div class="modal-backdrop" id="modal" hidden>
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTitle"
+      >
+        <h3 id="modalTitle">Warning</h3>
+        <p id="modalBody"></p>
+        <div class="modal-actions">
+          <button class="btn ghost" type="button" id="modalCancel">
+            Cancel and edit
+          </button>
+          <button class="btn danger" type="button" id="modalConfirm">
+            Save anyway
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

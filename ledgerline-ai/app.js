@@ -7,22 +7,22 @@
   var STORAGE_KEY = "ledgerline-v3";
   var THEME_KEY = "ledgerline-theme";
   var DRAFT_KEY = "ledgerline-draft";
-  var SCHEMA_VERSION = 5;
+  var SCHEMA_VERSION = 6;
   var MAX_AMOUNT = 1e9;
   var MAX_DESC_LEN = 60;
-  var MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+  var MAX_IMPORT_BYTES = 5 * 1024 * 1024;
   var MAX_IMPORT_RECORDS = 50000;
   var MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   var CATS = {
-    Food: { c: "#e8743b", i: "🍜" },
-    Transport: { c: "#2f9bd6", i: "🚌" },
-    Bills: { c: "#7a5cd6", i: "🧾" },
-    Shopping: { c: "#d6459b", i: "🛍️" },
-    Health: { c: "#1fa67a", i: "💊" },
-    Fun: { c: "#e5b429", i: "🎬" },
-    Salary: { c: "#15803d", i: "💼" },
-    Other: { c: "#8791a5", i: "📦" }
+    Food: { c: "#E8845C", i: "🍜" },
+    Transport: { c: "#5B9BD5", i: "🚌" },
+    Bills: { c: "#8B7CD6", i: "🧾" },
+    Shopping: { c: "#D67BA8", i: "🛍️" },
+    Health: { c: "#4DB89A", i: "💊" },
+    Fun: { c: "#E5B429", i: "🎬" },
+    Salary: { c: "#16866A", i: "💼" },
+    Other: { c: "#8290A5", i: "📦" }
   };
   var EXPENSE_CATS = ["Food", "Transport", "Bills", "Shopping", "Health", "Fun", "Other"];
   var INCOME_CATS = ["Salary", "Other"];
@@ -45,7 +45,6 @@
   function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
   function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
-  /** Parse a YYYY-MM-DD string as a LOCAL date. Returns null if invalid. */
   function parseDateOnly(str) {
     if (typeof str !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
     var y = parseInt(str.slice(0, 4), 10);
@@ -70,6 +69,7 @@
     budget: 0,
     catBudgets: {},
     recurring: [],
+    goals: [],
     sts: { nextIncomeDate: "", nextIncomeAmount: 0, savingsGoal: 0 },
     lastIdSeq: 0
   };
@@ -92,13 +92,11 @@
     total: 0,
     raf: null,
     trendYear: today.getFullYear(),
-    editId: null,
-    pendingDeleteId: null,
-    lastBotAnswer: ""
+    editId: null
   };
 
   /* ============================================================
-     Persistence with schema validation
+     Persistence
   ============================================================ */
   function isValidTxRecord(t) {
     if (!t || typeof t !== "object") return false;
@@ -109,8 +107,7 @@
     if (typeof t.amount !== "number" || !isFinite(t.amount) || t.amount <= 0 || t.amount > MAX_AMOUNT) return false;
     if (typeof t.cat !== "string" || !Object.prototype.hasOwnProperty.call(CATS, t.cat)) return false;
     if (typeof t.date !== "string") return false;
-    var dt = parseDateOnly(t.date);
-    if (!dt) return false;
+    if (!parseDateOnly(t.date)) return false;
     var allowed = t.type === "income" ? INCOME_CATS : EXPENSE_CATS;
     if (allowed.indexOf(t.cat) < 0) return false;
     return true;
@@ -130,56 +127,50 @@
     return true;
   }
 
+  function isValidGoal(g) {
+    if (!g || typeof g !== "object") return false;
+    if (typeof g.id !== "number" || !isFinite(g.id) || g.id <= 0) return false;
+    if (typeof g.name !== "string" || !g.name.trim()) return false;
+    if (g.name.length > MAX_DESC_LEN * 4) return false;
+    if (typeof g.saved !== "number" || !isFinite(g.saved) || g.saved < 0) return false;
+    if (typeof g.target !== "number" || !isFinite(g.target) || g.target <= 0) return false;
+    if (g.targetDate && !parseDateOnly(g.targetDate)) return false;
+    return true;
+  }
+
   function normalizeTx(t) {
-    return {
-      id: t.id,
-      type: t.type,
-      desc: t.desc.trim().slice(0, MAX_DESC_LEN),
-      amount: round2(t.amount),
-      cat: t.cat,
-      date: t.date
-    };
+    return { id: t.id, type: t.type, desc: t.desc.trim().slice(0, MAX_DESC_LEN), amount: round2(t.amount), cat: t.cat, date: t.date };
   }
   function normalizeRec(r) {
+    return { id: r.id, type: r.type, desc: r.desc.trim().slice(0, MAX_DESC_LEN), amount: round2(r.amount), cat: r.cat, freq: r.freq, next: r.next };
+  }
+  function normalizeGoal(g) {
     return {
-      id: r.id,
-      type: r.type,
-      desc: r.desc.trim().slice(0, MAX_DESC_LEN),
-      amount: round2(r.amount),
-      cat: r.cat,
-      freq: r.freq,
-      next: r.next
+      id: g.id,
+      name: g.name.trim().slice(0, MAX_DESC_LEN),
+      saved: round2(g.saved),
+      target: round2(g.target),
+      targetDate: g.targetDate && parseDateOnly(g.targetDate) ? g.targetDate : ""
     };
   }
 
   function storageAvailable() {
-    try {
-      var k = "__ll_test__";
-      localStorage.setItem(k, "1");
-      localStorage.removeItem(k);
-      return true;
-    } catch (e) { return false; }
+    try { var k = "__ll_test__"; localStorage.setItem(k, "1"); localStorage.removeItem(k); return true; }
+    catch (e) { return false; }
   }
 
   function load() {
     var raw = null;
-    if (!storageAvailable()) {
-      showToast("Browser storage is unavailable. Changes will not be saved.");
-      return;
-    }
+    if (!storageAvailable()) { showToast("Browser storage is unavailable. Changes will not be saved."); return; }
     try { raw = localStorage.getItem(STORAGE_KEY); }
-    catch (e) { showToast("Could not read saved data from this browser."); return; }
+    catch (e) { showToast("Could not read saved data."); return; }
     if (!raw) return;
 
-    var parsed = null;
+    var parsed;
     try { parsed = JSON.parse(raw); }
-    catch (e) {
-      showToast("Saved data was corrupt and could not be read.");
-      return;
-    }
+    catch (e) { showToast("Saved data was corrupt and could not be read."); return; }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
 
-    // Version check: reject future versions, accept known ones.
     var v = parsed.version;
     if (typeof v === "number" && v > SCHEMA_VERSION) {
       showToast("Saved data was created by a newer version. Not loading it.");
@@ -214,17 +205,27 @@
     }
     state.recurring = recValid;
 
-    state.budget = (typeof parsed.budget === "number" && isFinite(parsed.budget) && parsed.budget >= 0)
-      ? round2(parsed.budget) : 0;
+    state.goals = [];
+    if (Array.isArray(parsed.goals)) {
+      var goalSeen = Object.create(null);
+      for (var gi = 0; gi < parsed.goals.length; gi++) {
+        var g = parsed.goals[gi];
+        if (!isValidGoal(g)) { dropped++; continue; }
+        if (goalSeen[g.id] || seen[g.id] || recSeen[g.id]) { dropped++; continue; }
+        goalSeen[g.id] = true;
+        if (g.id > maxId) maxId = g.id;
+        state.goals.push(normalizeGoal(g));
+      }
+    }
+
+    state.budget = (typeof parsed.budget === "number" && isFinite(parsed.budget) && parsed.budget >= 0) ? round2(parsed.budget) : 0;
 
     state.catBudgets = {};
     if (parsed.catBudgets && typeof parsed.catBudgets === "object" && !Array.isArray(parsed.catBudgets)) {
       Object.keys(parsed.catBudgets).forEach(function (k) {
         if (EXPENSE_CATS.indexOf(k) >= 0) {
           var val = parsed.catBudgets[k];
-          if (typeof val === "number" && isFinite(val) && val >= 0) {
-            state.catBudgets[k] = round2(val);
-          }
+          if (typeof val === "number" && isFinite(val) && val >= 0) state.catBudgets[k] = round2(val);
         }
       });
     }
@@ -234,42 +235,29 @@
       if (!parseDateOnly(nid)) nid = "";
       state.sts = {
         nextIncomeDate: nid,
-        nextIncomeAmount: (typeof parsed.sts.nextIncomeAmount === "number" && isFinite(parsed.sts.nextIncomeAmount) && parsed.sts.nextIncomeAmount >= 0)
-          ? round2(parsed.sts.nextIncomeAmount) : 0,
-        savingsGoal: (typeof parsed.sts.savingsGoal === "number" && isFinite(parsed.sts.savingsGoal) && parsed.sts.savingsGoal >= 0)
-          ? round2(parsed.sts.savingsGoal) : 0
+        nextIncomeAmount: (typeof parsed.sts.nextIncomeAmount === "number" && isFinite(parsed.sts.nextIncomeAmount) && parsed.sts.nextIncomeAmount >= 0) ? round2(parsed.sts.nextIncomeAmount) : 0,
+        savingsGoal: (typeof parsed.sts.savingsGoal === "number" && isFinite(parsed.sts.savingsGoal) && parsed.sts.savingsGoal >= 0) ? round2(parsed.sts.savingsGoal) : 0
       };
     }
 
     state.lastIdSeq = maxId;
-
-    if (dropped > 0) {
-      showToast(dropped + " stored record" + (dropped === 1 ? "" : "s") + " were invalid and skipped.");
-    }
+    if (dropped > 0) showToast(dropped + " stored record" + (dropped === 1 ? "" : "s") + " were invalid and skipped.");
   }
 
   function save() {
-    if (!storageAvailable()) {
-      showToast("Browser storage is unavailable — changes were not saved.");
-      return false;
-    }
+    if (!storageAvailable()) { showToast("Browser storage is unavailable — changes were not saved."); return false; }
     try {
       state.version = SCHEMA_VERSION;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       return true;
     } catch (e) {
-      var msg = (e && e.name === "QuotaExceededError")
-        ? "Storage is full. Export a backup and clear old data."
-        : "Could not save to this browser's storage.";
+      var msg = (e && e.name === "QuotaExceededError") ? "Storage is full. Export a backup and clear old data." : "Could not save to this browser's storage.";
       showToast(msg);
       return false;
     }
   }
 
-  function nextId() {
-    state.lastIdSeq += 1;
-    return state.lastIdSeq;
-  }
+  function nextId() { state.lastIdSeq += 1; return state.lastIdSeq; }
 
   /* ============================================================
      Toasts
@@ -285,14 +273,14 @@
     function dismiss() {
       if (!t.parentNode) return;
       t.classList.add("out");
-      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 250);
+      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 220);
     }
     if (actionLabel && typeof fn === "function") {
       var b = document.createElement("button");
       b.type = "button";
       b.textContent = actionLabel;
       b.addEventListener("click", function () {
-        try { fn(); } catch (e) { /* noop */ } finally { dismiss(); }
+        try { fn(); } catch (e) { } finally { dismiss(); }
       });
       t.appendChild(b);
     }
@@ -309,7 +297,7 @@
     if (!isFinite(from)) from = 0;
     el.dataset.v = to;
     if (reduceMotion || from === to) { el.textContent = fmt.format(to); return; }
-    var start = null, dur = 550;
+    var start = null, dur = 500;
     function step(ts) {
       if (!start) start = ts;
       var p = Math.min(1, (ts - start) / dur);
@@ -350,9 +338,6 @@
     return by;
   }
 
-  /* ============================================================
-     Budget helpers
-  ============================================================ */
   function budgetStatus(spent, budget) {
     if (!(budget > 0)) return { state: "unset", pct: 0, remaining: 0, excess: 0 };
     var pct = spent / budget * 100;
@@ -372,6 +357,12 @@
     return MONTH_NAMES[mm] + " " + y;
   }
 
+  function prevMonthOf(monthStr) {
+    var d = new Date(Number(monthStr.slice(0, 4)), Number(monthStr.slice(5, 7)) - 1, 1);
+    d.setMonth(d.getMonth() - 1);
+    return iso(d).slice(0, 7);
+  }
+
   /* ============================================================
      Safe-to-Spend
   ============================================================ */
@@ -387,8 +378,7 @@
     var savingsGoal = state.sts.savingsGoal || 0;
 
     var todayD = new Date(); todayD.setHours(0, 0, 0, 0);
-    var endDate = null;
-    var daysRemaining = null;
+    var endDate = null, daysRemaining = null;
     if (nextDate) {
       var nd = parseDateOnly(nextDate);
       if (nd && nd >= todayD) {
@@ -424,24 +414,13 @@
     var daily = daysRemaining > 0 ? round2(usable / daysRemaining) : usable;
 
     return {
-      balance: balance,
-      usable: usable,
-      daily: daily,
-      daysRemaining: daysRemaining,
-      upcomingRecurring: upcomingRecurring,
-      upcomingList: upcomingList,
-      expectedIncome: expectedIncome,
-      savingsGoal: savingsGoal,
-      nextDate: endDate ? iso(endDate) : "",
-      remainingBudget: remainingBudget
+      balance: balance, usable: usable, daily: daily, daysRemaining: daysRemaining,
+      upcomingRecurring: upcomingRecurring, upcomingList: upcomingList,
+      expectedIncome: expectedIncome, savingsGoal: savingsGoal,
+      nextDate: endDate ? iso(endDate) : "", remainingBudget: remainingBudget
     };
   }
 
-  /**
-   * Compute the next occurrence of a recurring item on or after fromDate.
-   * Uses anchor-day preservation so that Jan 31 → Feb 28 → Mar 31 rather
-   * than drifting to the 28th permanently.
-   */
   function nextOccurrence(rec, fromDate) {
     var anchor = parseDateOnly(rec.next);
     if (!anchor) return null;
@@ -450,22 +429,17 @@
     var anchorDay = anchor.getDate();
     while (d < fromDate) {
       if (iter++ > 2000) return null;
-      if (rec.freq === "weekly") {
-        d.setDate(d.getDate() + 7);
-      } else if (rec.freq === "monthly") {
-        var y = d.getFullYear();
-        var m = d.getMonth() + 1;
+      if (rec.freq === "weekly") { d.setDate(d.getDate() + 7); }
+      else if (rec.freq === "monthly") {
+        var y = d.getFullYear(), m = d.getMonth() + 1;
         if (m > 11) { m = 0; y++; }
         var dim = daysInMonth(y, m + 1);
         d = new Date(y, m, Math.min(anchorDay, dim));
       } else if (rec.freq === "yearly") {
-        var yy = d.getFullYear() + 1;
-        var mm = d.getMonth();
+        var yy = d.getFullYear() + 1, mm = d.getMonth();
         var dd = Math.min(anchorDay, daysInMonth(yy, mm + 1));
         d = new Date(yy, mm, dd);
-      } else {
-        return null;
-      }
+      } else return null;
     }
     return d;
   }
@@ -475,40 +449,34 @@
     var amountEl = $("stsAmount");
     var subEl = $("stsSub");
     var detailsEl = $("stsDetails");
+    if (!amountEl || !subEl || !detailsEl) return;
 
     if (s.usable === 0 && s.balance === 0 && s.expectedIncome === 0 && state.tx.length === 0) {
       amountEl.textContent = "—";
-      amountEl.className = "";
-      subEl.textContent = "Add income or set expected income to calculate";
-      detailsEl.innerHTML = "";
+      amountEl.className = "sts-amount";
+      subEl.textContent = "Add income or set expected income to calculate your daily allowance.";
+      detailsEl.innerHTML = '<p class="sts-disclaimer muted">Safe to Spend estimates how much you can spend per day until your next income, after upcoming recurring expenses and your savings goal.</p>';
       return;
     }
 
     amountEl.textContent = fmt.format(s.daily);
-    amountEl.className = s.daily < 0 ? "exp" : "inc";
+    amountEl.className = "sts-amount " + (s.daily < 0 ? "exp" : "inc");
     subEl.textContent = "per day for " + s.daysRemaining + " day" + (s.daysRemaining === 1 ? "" : "s") +
       (s.nextDate ? " · until " + s.nextDate : "");
 
     var rows = [];
     rows.push(detailRow("Current balance", fmt.format(s.balance), s.balance < 0));
     rows.push(detailRow("Expected income", "+" + fmt.format(s.expectedIncome), false));
-    if (s.upcomingRecurring > 0) {
-      rows.push(detailRow("Upcoming recurring", "−" + fmt.format(s.upcomingRecurring), true));
-    }
-    if (s.savingsGoal > 0) {
-      rows.push(detailRow("Savings goal", "−" + fmt.format(s.savingsGoal), true));
-    }
+    if (s.upcomingRecurring > 0) rows.push(detailRow("Upcoming recurring", "−" + fmt.format(s.upcomingRecurring), true));
+    if (s.savingsGoal > 0) rows.push(detailRow("Savings goal", "−" + fmt.format(s.savingsGoal), true));
     rows.push(detailRow("Total safe to spend", fmt.format(s.usable), s.usable < 0));
 
     if (s.upcomingList.length) {
       rows.push('<div class="sts-upcoming"><strong>Upcoming:</strong> ' +
-        s.upcomingList.map(function (u) {
-          return esc(u.desc) + " (" + fmt.format(u.amount) + " on " + u.date + ")";
-        }).join(", ") +
+        s.upcomingList.map(function (u) { return esc(u.desc) + " (" + fmt.format(u.amount) + " on " + u.date + ")"; }).join(", ") +
         '</div>');
     }
-    rows.push('<p class="sts-disclaimer muted">Estimate only. Based on your recorded data — not financial advice.</p>');
-
+    rows.push('<p class="sts-disclaimer">Estimate only. Based on your recorded data — not financial advice.</p>');
     detailsEl.innerHTML = rows.join("");
   }
 
@@ -517,7 +485,7 @@
   }
 
   /* ============================================================
-     Render: budget + stats
+     Budget + stats
   ============================================================ */
   function renderStats() {
     var month = $("month").value || thisMonth;
@@ -529,18 +497,37 @@
     countUp($("sInc"), inc);
     countUp($("sExp"), exp);
     countUp($("sNet"), net);
-    $("sNet").className = net >= 0 ? "inc" : "exp";
+    $("sNet").className = "summary-value " + (net >= 0 ? "inc" : "exp");
 
     var rate = $("sRate");
     if (inc > 0) {
       rate.textContent = "Savings rate " + Math.round(net / inc * 100) + "%";
-      rate.className = "muted";
     } else if (exp > 0) {
       rate.textContent = "No income recorded this month";
-      rate.className = "muted exp";
     } else {
       rate.textContent = "No activity this month";
-      rate.className = "muted";
+    }
+
+    // Expense comparison note
+    var expNote = $("sExpNote");
+    if (expNote) {
+      var prevM = prevMonthOf(month);
+      var prevExp = monthExpenses(prevM);
+      if (prevExp > 0) {
+        var chg = Math.round(((exp - prevExp) / prevExp) * 100);
+        expNote.textContent = (chg >= 0 ? "+" : "") + chg + "% vs last month";
+      } else if (exp > 0) {
+        expNote.textContent = "No prior month data";
+      } else {
+        expNote.textContent = "No expenses this month";
+      }
+    }
+
+    // Net savings note
+    var netNote = $("sNetNote");
+    if (netNote) {
+      if (inc > 0) netNote.textContent = Math.round(net / inc * 100) + "% savings rate";
+      else netNote.textContent = exp > 0 ? "No income recorded" : "No activity";
     }
 
     var budget = state.budget;
@@ -555,22 +542,38 @@
     if (status.state === "unset") {
       $("left").textContent = "—";
       $("leftlbl").textContent = "Set a monthly budget to start tracking";
-      $("budgetMeta").textContent = "";
+      $("budgetMeta").textContent = "Set a monthly spending limit to track progress.";
       $("sBudgetLeft").textContent = "—";
-      $("sBudgetLeft").className = "muted";
+      $("sBudgetLeft").className = "summary-value";
     } else if (status.state === "over") {
       $("left").textContent = fmt.format(status.excess);
       $("leftlbl").textContent = "over budget · " + Math.round(status.pct) + "% used";
       $("budgetMeta").textContent = "Spent " + fmt.format(exp) + " of " + fmt.format(budget) + " · exceeded by " + fmt.format(status.excess);
       $("sBudgetLeft").textContent = "−" + fmt.format(status.excess);
-      $("sBudgetLeft").className = "exp";
+      $("sBudgetLeft").className = "summary-value exp";
     } else {
       $("left").textContent = fmt.format(status.remaining);
       $("leftlbl").textContent = "left to spend · " + Math.round(status.pct) + "% used";
       var metaExtra = status.state === "critical" ? " · critical" : status.state === "warn" ? " · warning" : "";
       $("budgetMeta").textContent = "Spent " + fmt.format(exp) + " of " + fmt.format(budget) + metaExtra;
       $("sBudgetLeft").textContent = fmt.format(status.remaining);
-      $("sBudgetLeft").className = (status.state === "warn" || status.state === "critical") ? "exp" : "inc";
+      $("sBudgetLeft").className = "summary-value " + ((status.state === "warn" || status.state === "critical") ? "exp" : "inc");
+    }
+
+    // Summary budget mini-track
+    var summaryFill = $("summaryBudgetFill");
+    var summaryBudgetNote = $("sBudgetNote");
+    if (summaryFill && summaryBudgetNote) {
+      if (state.budget > 0) {
+        var pct = Math.min(100, exp / state.budget * 100);
+        summaryFill.style.width = pct + "%";
+        summaryFill.className = status.state === "over" ? "bad" : (status.state === "warn" || status.state === "critical") ? "warn" : "";
+        summaryBudgetNote.textContent = Math.round(pct) + "% of " + fmt.format(state.budget) + " used";
+      } else {
+        summaryFill.style.width = "0%";
+        summaryFill.className = "";
+        summaryBudgetNote.textContent = "Set a monthly budget";
+      }
     }
 
     $("viewingLabel").textContent = "Viewing " + monthLabel(month);
@@ -578,7 +581,7 @@
   }
 
   /* ============================================================
-     Charts
+     Doughnut chart
   ============================================================ */
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -596,7 +599,7 @@
     if (reduceMotion) { ui.anim = 1; paint(); renderLegend(); return; }
 
     ui.anim = 0;
-    var t0 = null, dur = 650;
+    var t0 = null, dur = 600;
     function frame(ts) {
       if (!t0) t0 = ts;
       var p = Math.min(1, (ts - t0) / dur);
@@ -613,16 +616,13 @@
     if (!canvas) return;
     var dpr = window.devicePixelRatio || 1;
     var S = 200;
-    if (canvas.width !== S * dpr) {
-      canvas.width = S * dpr;
-      canvas.height = S * dpr;
-    }
+    if (canvas.width !== S * dpr) { canvas.width = S * dpr; canvas.height = S * dpr; }
     var x = canvas.getContext("2d");
     if (!x) return;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     x.clearRect(0, 0, S, S);
 
-    var cx = S / 2, cy = S / 2, R = 92, r = 60;
+    var cx = S / 2, cy = S / 2, R = 92, r = 62;
     var segs = [];
     var keys = ui.keys, total = ui.total;
 
@@ -630,22 +630,22 @@
       x.beginPath();
       x.arc(cx, cy, R, 0, Math.PI * 2);
       x.arc(cx, cy, r, 0, Math.PI * 2, true);
-      x.fillStyle = cssVar("--line-soft") || "#1a253a";
+      x.fillStyle = cssVar("--surface-3") || "#1C1D27";
       x.fill("evenodd");
     } else {
       var a = -Math.PI / 2;
-      var gap = keys.length > 1 ? 0.03 : 0;
+      var gap = keys.length > 1 ? 0.035 : 0;
       keys.forEach(function (k, i) {
         var sweep = ui.by[k] / total * Math.PI * 2 * ui.anim;
         var start = a, end = a + sweep;
-        var rr = R + (ui.hover === i ? 6 : 0);
+        var rr = R + (ui.hover === i ? 5 : 0);
         if (sweep > 0.0001) {
           x.beginPath();
           x.arc(cx, cy, rr, start + gap, end - gap);
           x.arc(cx, cy, r, end - gap, start + gap, true);
           x.closePath();
-          x.fillStyle = CATS[k] ? CATS[k].c : "#8791a5";
-          x.globalAlpha = (ui.hover !== -1 && ui.hover !== i) ? 0.35 : 1;
+          x.fillStyle = CATS[k] ? CATS[k].c : "#8290A5";
+          x.globalAlpha = (ui.hover !== -1 && ui.hover !== i) ? 0.3 : 1;
           x.fill();
           x.globalAlpha = 1;
         }
@@ -659,18 +659,18 @@
     if (ui.hover >= 0 && keys[ui.hover]) {
       var hk = keys[ui.hover];
       x.fillStyle = CATS[hk].c;
-      x.font = "700 20px " + cssVar("--font");
+      x.font = "600 18px " + (cssVar("--mono") || "monospace");
       x.fillText(fmt.format(ui.by[hk]), cx, cy + 2);
-      x.fillStyle = cssVar("--ink");
-      x.font = "600 13px " + cssVar("--font");
+      x.fillStyle = cssVar("--ink") || "#F5F5F7";
+      x.font = "500 12px " + (cssVar("--font") || "sans-serif");
       x.fillText(hk + " · " + Math.round(ui.by[hk] / total * 100) + "%", cx, cy + 22);
     } else {
-      x.fillStyle = cssVar("--ink");
-      x.font = "700 18px " + cssVar("--font");
+      x.fillStyle = cssVar("--ink") || "#F5F5F7";
+      x.font = "600 17px " + (cssVar("--mono") || "monospace");
       x.fillText(fmt.format(total), cx, cy + 2);
-      x.fillStyle = cssVar("--muted");
-      x.font = "12px " + cssVar("--font");
-      x.fillText(total ? "spent this month" : "no spending yet", cx, cy + 20);
+      x.fillStyle = cssVar("--muted") || "#6F7180";
+      x.font = "12px " + (cssVar("--font") || "sans-serif");
+      x.fillText(total ? "spent this month" : "no spending yet", cx, cy + 21);
     }
   }
 
@@ -682,7 +682,7 @@
     var x = e.clientX - rect.left - rect.width / 2;
     var y = e.clientY - rect.top - rect.height / 2;
     var d = Math.sqrt(x * x + y * y) * (200 / rect.width);
-    if (d < 60 || d > 98) return -1;
+    if (d < 62 || d > 98) return -1;
     var ang = Math.atan2(y, x);
     if (ang < -Math.PI / 2) ang += Math.PI * 2;
     for (var i = 0; i < ui.segs.length; i++) {
@@ -703,9 +703,8 @@
       var on = ui.filterCat === k;
       var pct = ui.total > 0 ? Math.round(ui.by[k] / ui.total * 100) : 0;
       return '<li role="button" tabindex="0" data-k="' + esc(k) + '" aria-pressed="' + on + '" class="' + (on ? "on" : "") + '">' +
-        '<i style="background:' + (CATS[k] ? CATS[k].c : "#8791a5") + '"></i>' +
-        (CATS[k] ? CATS[k].i : "") + " " + esc(k) +
-        '<em>' + pct + '%</em></li>';
+        '<i style="background:' + (CATS[k] ? CATS[k].c : "#8290A5") + '"></i>' +
+        esc(k) + '<em>' + pct + '%</em></li>';
     }).join("");
   }
 
@@ -766,10 +765,10 @@
     if (maxExpense > baseline) baseline = maxExpense;
     var yMax = baseline > 0 ? niceCeil(baseline) : 1000;
 
-    x.strokeStyle = cssVar("--line-soft") || "#1a253a";
+    x.strokeStyle = cssVar("--line-soft") || "#1C1D26";
     x.lineWidth = 1;
-    x.font = "11px " + cssVar("--font");
-    x.fillStyle = cssVar("--muted") || "#8a97ad";
+    x.font = "11px " + (cssVar("--font") || "sans-serif");
+    x.fillStyle = cssVar("--muted") || "#6F7180";
     x.textAlign = "right";
     x.textBaseline = "middle";
     var steps = 4;
@@ -783,56 +782,54 @@
     if (maxIncome > 0) {
       var incomeY = padT + plotH - (maxIncome / yMax) * plotH;
       x.save();
-      x.strokeStyle = "rgba(52, 211, 153, 0.55)";
+      x.strokeStyle = "rgba(146, 112, 242, 0.45)";
       x.setLineDash([5, 4]);
       x.beginPath(); x.moveTo(padL, incomeY); x.lineTo(padL + plotW, incomeY); x.stroke();
       x.restore();
     }
 
     var slot = plotW / 12;
-    var barW = slot * 0.55;
-    var accent2 = "#8aa4ff";
+    var barW = slot * 0.52;
 
     for (var m = 0; m < 12; m++) {
       var v = expenses[m];
       var bh = yMax > 0 ? (v / yMax) * plotH : 0;
       var bx = padL + slot * m + (slot - barW) / 2;
       var by = padT + plotH - bh;
-      var grad = x.createLinearGradient(0, by, 0, padT + plotH);
       var overspent = v > 0 && v > incomes[m];
-      if (overspent) {
-        grad.addColorStop(0, "#f87171");
-        grad.addColorStop(1, "rgba(248, 113, 113, 0.35)");
+      if (v > 0) {
+        var grad = x.createLinearGradient(0, by, 0, padT + plotH);
+        if (overspent) { grad.addColorStop(0, "#FF6B81"); grad.addColorStop(1, "rgba(255,107,129,0.12)"); }
+        else { grad.addColorStop(0, "#75D5DF"); grad.addColorStop(1, "rgba(117,213,223,0.12)"); }
+        x.fillStyle = grad;
       } else {
-        grad.addColorStop(0, accent2);
-        grad.addColorStop(1, "rgba(109,141,255,.35)");
+        x.fillStyle = cssVar("--surface-3") || "#1C1D27";
       }
-      x.fillStyle = v > 0 ? grad : (cssVar("--line-soft") || "#1a253a");
-      roundRect(x, bx, by, barW, Math.max(bh, v > 0 ? 3 : 2), 4);
+      roundRect(x, bx, by, barW, Math.max(bh, v > 0 ? 3 : 2), 3);
       x.fill();
     }
 
-    x.fillStyle = cssVar("--muted") || "#8a97ad";
-    x.font = "11px " + cssVar("--font");
+    x.fillStyle = cssVar("--muted") || "#6F7180";
+    x.font = "11px " + (cssVar("--font") || "sans-serif");
     x.textAlign = "center";
     x.textBaseline = "top";
     for (var m2 = 0; m2 < 12; m2++) {
       var cx = padL + slot * m2 + slot / 2;
-      x.fillText(MONTH_NAMES[m2], cx, padT + plotH + 8);
+      x.fillText(MONTH_NAMES[m2], cx, padT + plotH + 9);
     }
 
     var stats = computeTrendStats(expenses, incomes);
     var host = $("trendStats");
     host.innerHTML = [
-      statBox("Highest expense month", stats.highest ? MONTH_NAMES[stats.highest.i] + " · " + fmt.format(stats.highest.v) : "—"),
-      statBox("Highest income month", stats.highestIncome ? MONTH_NAMES[stats.highestIncome.i] + " · " + fmt.format(stats.highestIncome.v) : "—"),
-      statBox("Average expense / month", fmt.format(stats.avg)),
-      statBox("Scale basis (Y-axis)", maxIncome > 0 ? "Highest income " + fmt.format(maxIncome) : "No income recorded")
+      statBox("Highest expense", stats.highest ? MONTH_NAMES[stats.highest.i] + " · " + fmt.format(stats.highest.v) : "—"),
+      statBox("Highest income", stats.highestIncome ? MONTH_NAMES[stats.highestIncome.i] + " · " + fmt.format(stats.highestIncome.v) : "—"),
+      statBox("Avg expense / month", fmt.format(stats.avg)),
+      statBox("Scale basis", maxIncome > 0 ? "Peak income " + fmt.format(maxIncome) : "No income recorded")
     ].join("");
 
     if (maxExpense === 0) {
-      x.fillStyle = cssVar("--muted") || "#8a97ad";
-      x.font = "13px " + cssVar("--font");
+      x.fillStyle = cssVar("--muted") || "#6F7180";
+      x.font = "13px " + (cssVar("--font") || "sans-serif");
       x.textAlign = "center";
       x.textBaseline = "middle";
       x.fillText("No expenses recorded in " + year, padL + plotW / 2, padT + plotH / 2);
@@ -885,6 +882,7 @@
   ============================================================ */
   function renderCategoryBudgets() {
     var host = $("catBudgets");
+    if (!host) return;
     var monthList = txsForMonth($("month").value || thisMonth);
     var spentByCat = categoryTotals(monthList);
 
@@ -907,8 +905,7 @@
         '<div class="catbudget ' + cls + '" data-cat="' + esc(cat) + '">' +
         '<div class="catbudget-head">' +
         '<i style="background:' + CATS[cat].c + '"></i>' +
-        '<b>' + CATS[cat].i + " " + esc(cat) + '</b>' +
-        badge +
+        '<b>' + esc(cat) + '</b>' + badge +
         '<input type="number" min="0" step="1" placeholder="Target" data-catbudget="' + esc(cat) + '" value="' + (target > 0 ? target : "") + '" aria-label="' + esc(cat) + ' monthly budget">' +
         '</div>' +
         '<div class="catbudget-row"><span>Spent</span><b>' + fmt.format(spent) + '</b></div>' +
@@ -921,10 +918,108 @@
   }
 
   /* ============================================================
+     Financial goals
+  ============================================================ */
+  var _editingGoalId = null;
+
+  function renderGoals() {
+    var host = $("goalGrid");
+    if (!host) return;
+    var goals = state.goals || [];
+    if (!goals.length) {
+      host.innerHTML = '<p class="empty" style="grid-column:1/-1">No goals yet. Add a savings goal to start tracking.</p>';
+      return;
+    }
+    host.innerHTML = goals.map(function (g) {
+      var pct = g.target > 0 ? Math.min(100, Math.round(g.saved / g.target * 100)) : 0;
+      var remaining = Math.max(0, g.target - g.saved);
+      var dateLabel = g.targetDate ? "Target: " + g.targetDate : "No target date";
+      return '<div class="goal-card" data-goal="' + g.id + '">' +
+        '<div class="goal-top"><h3>' + esc(g.name) + '</h3><span class="muted" style="font-size:12px;font-weight:600">' + pct + '%</span></div>' +
+        '<div class="goal-amounts"><b>' + fmt.format(g.saved) + '</b> of ' + fmt.format(g.target) + '</div>' +
+        '<div class="goal-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="goal-meta"><span>' + esc(dateLabel) + '</span><span>' + fmt.format(remaining) + ' to go</span></div>' +
+        '<div class="goal-actions">' +
+        '<button class="btn" type="button" data-goaledit="' + g.id + '">Edit</button>' +
+        '<button class="btn ghost" type="button" data-goaldel="' + g.id + '">Delete</button>' +
+        '</div></div>';
+    }).join("");
+  }
+
+  function resetGoalForm() {
+    _editingGoalId = null;
+    var form = $("goalForm");
+    if (form) form.hidden = true;
+    if ($("goalName")) $("goalName").value = "";
+    if ($("goalSaved")) $("goalSaved").value = "";
+    if ($("goalTarget")) $("goalTarget").value = "";
+    if ($("goalDate")) $("goalDate").value = "";
+    if ($("goalSave")) $("goalSave").textContent = "Save";
+  }
+
+  function startEditGoal(id) {
+    var g = (state.goals || []).find(function (x) { return x.id === id; });
+    if (!g) return;
+    _editingGoalId = id;
+    $("goalName").value = g.name;
+    $("goalSaved").value = g.saved;
+    $("goalTarget").value = g.target;
+    $("goalDate").value = g.targetDate || "";
+    $("goalForm").hidden = false;
+    $("goalSave").textContent = "Update";
+    $("goalName").focus();
+  }
+
+  function saveGoal() {
+    var name = $("goalName").value.trim();
+    var savedRaw = $("goalSaved").value;
+    var targetRaw = $("goalTarget").value;
+    var saved = savedRaw === "" ? 0 : parseFloat(savedRaw);
+    var target = targetRaw === "" ? 0 : parseFloat(targetRaw);
+    var targetDate = $("goalDate").value;
+
+    if (!name) { showToast("Goal name is required."); return; }
+    if (name.length > MAX_DESC_LEN) { showToast("Goal name must be " + MAX_DESC_LEN + " characters or fewer."); return; }
+    if (!isFinite(saved) || saved < 0) { showToast("Saved amount must be a non-negative number."); return; }
+    if (!isFinite(target) || target <= 0) { showToast("Target amount must be greater than 0."); return; }
+    if (target > MAX_AMOUNT) { showToast("Target exceeds the maximum allowed."); return; }
+    if (targetDate && !parseDateOnly(targetDate)) { showToast("Invalid target date."); return; }
+
+    if (!state.goals) state.goals = [];
+
+    if (_editingGoalId != null) {
+      var idx = state.goals.findIndex(function (g) { return g.id === _editingGoalId; });
+      if (idx < 0) { showToast("That goal no longer exists."); resetGoalForm(); return; }
+      var prev = state.goals[idx];
+      state.goals[idx] = {
+        id: _editingGoalId,
+        name: name,
+        saved: round2(saved),
+        target: round2(target),
+        targetDate: targetDate || ""
+      };
+      if (!save()) { state.goals[idx] = prev; return; }
+      showToast("Goal updated.");
+    } else {
+      state.goals.push({
+        id: nextId(),
+        name: name,
+        saved: round2(saved),
+        target: round2(target),
+        targetDate: targetDate || ""
+      });
+      if (!save()) { state.goals.pop(); return; }
+      showToast("Goal added.");
+    }
+    resetGoalForm();
+    renderGoals();
+  }
+
+  /* ============================================================
      Transactions table
   ============================================================ */
   function renderTable() {
-    var q = $("q").value.trim().toLowerCase();
+    var q = ($("q") && $("q").value ? $("q").value : "").trim().toLowerCase();
     var minV = ui.filterMin;
     var maxV = ui.filterMax;
     var list = txsForMonth($("month").value || thisMonth).filter(function (t) {
@@ -956,11 +1051,11 @@
       return '<tr' + (t.id === ui.lastId ? ' class="enter"' : '') + ' data-id="' + t.id + '">' +
         '<td>' + dd + '</td>' +
         '<td>' + esc(t.desc) + '</td>' +
-        '<td><span class="chip"><i style="background:' + catMeta.c + '"></i>' + catMeta.i + " " + esc(t.cat) + '</span></td>' +
+        '<td><span class="chip"><i style="background:' + catMeta.c + '"></i>' + esc(t.cat) + '</span></td>' +
         '<td class="amt ' + (isIncome ? "inc" : "exp") + '">' + (isIncome ? "+" : "−") + fmtDec.format(t.amount) + '</td>' +
         '<td><div class="row-actions">' +
         '<button class="icon-btn edit" type="button" data-id="' + t.id + '" aria-label="Edit ' + esc(t.desc) + '">Edit</button>' +
-        '<button class="icon-btn del" type="button" data-id="' + t.id + '" aria-label="Delete ' + esc(t.desc) + '">×</button>' +
+        '<button class="icon-btn del" type="button" data-id="' + t.id + '" aria-label="Delete ' + esc(t.desc) + '">Delete</button>' +
         '</div></td>' +
         '</tr>';
     }).join("");
@@ -973,9 +1068,7 @@
       : "No transactions match the current filters.";
     ui.lastId = null;
 
-    var totalAmt = round2(list.reduce(function (s, t) {
-      return s + (t.type === "income" ? t.amount : -t.amount);
-    }, 0));
+    var totalAmt = round2(list.reduce(function (s, t) { return s + (t.type === "income" ? t.amount : -t.amount); }, 0));
     var summary = $("txSummary");
     summary.textContent = list.length + " transaction" + (list.length === 1 ? "" : "s") +
       " · net " + fmtDec.format(totalAmt);
@@ -994,8 +1087,7 @@
     var list = ui.type === "income" ? INCOME_CATS : EXPENSE_CATS;
     if (list.indexOf(ui.cat) < 0) ui.cat = list[0];
     $("catchips").innerHTML = list.map(function (k) {
-      return '<button type="button" aria-pressed="' + (ui.cat === k) + '" style="--c:' + CATS[k].c + '" data-c="' + esc(k) + '">' +
-        CATS[k].i + " " + esc(k) + '</button>';
+      return '<button type="button" aria-pressed="' + (ui.cat === k) + '" style="--c:' + CATS[k].c + '" data-c="' + esc(k) + '">' + esc(k) + '</button>';
     }).join("");
   }
 
@@ -1023,9 +1115,7 @@
     if (message) { field.setAttribute("aria-invalid", "true"); err.textContent = message; }
     else { field.removeAttribute("aria-invalid"); err.textContent = ""; }
   }
-  function clearAllErrors() {
-    setFieldError("desc", ""); setFieldError("amount", ""); setFieldError("date", "");
-  }
+  function clearAllErrors() { setFieldError("desc", ""); setFieldError("amount", ""); setFieldError("date", ""); }
 
   function validateForm() {
     var errors = {};
@@ -1083,22 +1173,13 @@
     clearDraft();
   }
 
-  /* ---- Draft persistence ---- */
   function saveDraft() {
     try {
-      var d = {
-        type: ui.type,
-        cat: ui.cat,
-        desc: $("desc").value,
-        amount: $("amount").value,
-        date: $("date").value
-      };
+      var d = { type: ui.type, cat: ui.cat, desc: $("desc").value, amount: $("amount").value, date: $("date").value };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-    } catch (e) { /* ignore */ }
+    } catch (e) { }
   }
-  function clearDraft() {
-    try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ }
-  }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { } }
   function loadDraft() {
     try {
       var raw = localStorage.getItem(DRAFT_KEY);
@@ -1114,7 +1195,7 @@
         x.setAttribute("aria-checked", String(x.dataset.type === ui.type));
       });
       renderCatChips();
-    } catch (e) { /* ignore */ }
+    } catch (e) { }
   }
 
   /* ============================================================
@@ -1178,16 +1259,9 @@
     var month = monthOf(data.date);
     if (ui.editId != null) {
       var idx = state.tx.findIndex(function (t) { return t.id === ui.editId; });
-      if (idx < 0) {
-        showToast("That transaction no longer exists.");
-        resetForm();
-        return;
-      }
+      if (idx < 0) { showToast("That transaction no longer exists."); resetForm(); return; }
       var prev = state.tx[idx];
-      var updated = {
-        id: prev.id, type: ui.type, desc: data.desc,
-        amount: data.amount, cat: ui.cat, date: data.date
-      };
+      var updated = { id: prev.id, type: ui.type, desc: data.desc, amount: data.amount, cat: ui.cat, date: data.date };
       state.tx[idx] = updated;
       ui.lastId = updated.id;
       if (!save()) {
@@ -1200,10 +1274,7 @@
       refreshAll();
       showToast("Transaction updated.");
     } else {
-      var rec = {
-        id: nextId(), type: ui.type, desc: data.desc,
-        amount: data.amount, cat: ui.cat, date: data.date
-      };
+      var rec = { id: nextId(), type: ui.type, desc: data.desc, amount: data.amount, cat: ui.cat, date: data.date };
       state.tx.push(rec);
       ui.lastId = rec.id;
       if (!save()) {
@@ -1217,23 +1288,14 @@
       refreshAll();
       var msg = (rec.type === "income" ? "Income" : "Expense") + " added: " + fmtDec.format(rec.amount);
       var bal = availableBalance(monthOf(rec.date));
-      if (bal < 0) {
-        msg += " · balance now " + fmtDec.format(bal);
-        showToast(msg);
-        var rate = $("sRate");
-        if (rate) {
-          rate.textContent = "⚠ Overspent by " + fmtDec.format(-bal) + " this month";
-          rate.className = "muted exp";
-        }
-      } else {
-        showToast(msg);
-      }
+      if (bal < 0) msg += " · balance now " + fmtDec.format(bal);
+      showToast(msg);
     }
     $("desc").focus();
   }
 
   /* ============================================================
-     Modal (with focus trap)
+     Modal
   ============================================================ */
   var _modalReturnFocus = null;
   function showModal(title, message, confirmLabel, cancelLabel, onConfirm, onCancel) {
@@ -1258,7 +1320,7 @@
       document.removeEventListener("keydown", handleKey);
       backdrop.hidden = true;
       if (_modalReturnFocus && typeof _modalReturnFocus.focus === "function") {
-        try { _modalReturnFocus.focus(); } catch (e) { /* ignore */ }
+        try { _modalReturnFocus.focus(); } catch (e) { }
       }
       _modalReturnFocus = null;
     }
@@ -1316,12 +1378,7 @@
      JSON backup / restore
   ============================================================ */
   function exportJSON() {
-    var payload = {
-      app: "ledgerline",
-      version: SCHEMA_VERSION,
-      exportedAt: new Date().toISOString(),
-      data: state
-    };
+    var payload = { app: "ledgerline", version: SCHEMA_VERSION, exportedAt: new Date().toISOString(), data: state };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -1336,10 +1393,7 @@
 
   function importJSONFile(file) {
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) {
-      showToast("Backup file is too large (max " + (MAX_IMPORT_BYTES / 1024 / 1024) + " MB).");
-      return;
-    }
+    if (file.size > MAX_IMPORT_BYTES) { showToast("Backup file is too large (max " + (MAX_IMPORT_BYTES / 1024 / 1024) + " MB)."); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var parsed;
@@ -1355,18 +1409,15 @@
       }
       var d = parsed.data;
       if (!Array.isArray(d.tx)) { showToast("Backup is missing transaction data."); return; }
-      if (d.tx.length > MAX_IMPORT_RECORDS) {
-        showToast("Backup contains too many records (max " + MAX_IMPORT_RECORDS + ").");
-        return;
-      }
+      if (d.tx.length > MAX_IMPORT_RECORDS) { showToast("Backup contains too many records (max " + MAX_IMPORT_RECORDS + ")."); return; }
 
-      // Build a candidate state WITHOUT mutating live state.
       var candidate = {
         version: SCHEMA_VERSION,
         tx: [],
         budget: 0,
         catBudgets: {},
         recurring: [],
+        goals: [],
         sts: { nextIncomeDate: "", nextIncomeAmount: 0, savingsGoal: 0 },
         lastIdSeq: 0
       };
@@ -1391,6 +1442,17 @@
           candidate.recurring.push(normalizeRec(r));
         });
       }
+      var invalidGoal = 0;
+      var goalSeen = Object.create(null);
+      if (Array.isArray(d.goals)) {
+        d.goals.forEach(function (g) {
+          if (!isValidGoal(g)) { invalidGoal++; return; }
+          if (seen[g.id] || recSeen[g.id] || goalSeen[g.id]) { invalidGoal++; return; }
+          goalSeen[g.id] = true;
+          if (g.id > maxId) maxId = g.id;
+          candidate.goals.push(normalizeGoal(g));
+        });
+      }
       candidate.budget = (typeof d.budget === "number" && isFinite(d.budget) && d.budget >= 0) ? round2(d.budget) : 0;
       if (d.catBudgets && typeof d.catBudgets === "object" && !Array.isArray(d.catBudgets)) {
         Object.keys(d.catBudgets).forEach(function (k) {
@@ -1410,10 +1472,9 @@
       candidate.lastIdSeq = maxId;
 
       var msg = "Restore will REPLACE all current data with:\n\n" +
-        "• " + candidate.tx.length + " transactions" +
-        (invalidTx ? " (" + invalidTx + " invalid will be skipped)" : "") +
-        "\n• " + candidate.recurring.length + " recurring items" +
-        (invalidRec ? " (" + invalidRec + " invalid will be skipped)" : "") +
+        "• " + candidate.tx.length + " transactions" + (invalidTx ? " (" + invalidTx + " invalid will be skipped)" : "") +
+        "\n• " + candidate.recurring.length + " recurring items" + (invalidRec ? " (" + invalidRec + " invalid will be skipped)" : "") +
+        "\n• " + candidate.goals.length + " goals" + (invalidGoal ? " (" + invalidGoal + " invalid will be skipped)" : "") +
         "\n• Budget: " + fmt.format(candidate.budget) +
         "\n\nThis cannot be undone. Continue?";
 
@@ -1422,15 +1483,16 @@
           var snapshot = JSON.parse(JSON.stringify(state));
           state.tx = candidate.tx;
           state.recurring = candidate.recurring;
+          state.goals = candidate.goals;
           state.budget = candidate.budget;
           state.catBudgets = candidate.catBudgets;
           state.sts = candidate.sts;
           state.lastIdSeq = candidate.lastIdSeq;
 
           if (!save()) {
-            // Roll back.
             state.tx = snapshot.tx;
             state.recurring = snapshot.recurring;
+            state.goals = snapshot.goals;
             state.budget = snapshot.budget;
             state.catBudgets = snapshot.catBudgets;
             state.sts = snapshot.sts;
@@ -1461,9 +1523,7 @@
     var month = $("month").value || thisMonth;
     var current = txsForMonth(month);
 
-    var date = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
-    date.setMonth(date.getMonth() - 1);
-    var previousMonth = iso(date).slice(0, 7);
+    var previousMonth = prevMonthOf(month);
     var previous = txsForMonth(previousMonth);
 
     var spent = sumByType(current, "expense");
@@ -1473,11 +1533,11 @@
 
     if (state.budget > 0) {
       var pct = Math.round(spent / state.budget * 100);
-      if (pct >= 100) cards.push({ icon: "🚨", title: "Budget exceeded", message: "You have used " + pct + "% of your monthly budget.", tone: "warning" });
-      else if (pct >= 75) cards.push({ icon: "⚠️", title: "Budget warning", message: "You have used " + pct + "% of your monthly budget.", tone: "warning" });
-      else cards.push({ icon: "✅", title: "Budget status", message: "You have used " + pct + "% of your monthly budget.", tone: "good" });
+      if (pct >= 100) cards.push({ icon: "!", title: "Budget exceeded", message: "You have used " + pct + "% of your monthly budget.", tone: "warning" });
+      else if (pct >= 75) cards.push({ icon: "!", title: "Budget warning", message: "You have used " + pct + "% of your monthly budget.", tone: "warning" });
+      else cards.push({ icon: "✓", title: "On track", message: "You have used " + pct + "% of your monthly budget.", tone: "good" });
     } else {
-      cards.push({ icon: "🎯", title: "Set a monthly budget", message: "Choose a budget to start tracking your spending limit.", tone: "info" });
+      cards.push({ icon: "◎", title: "Set a monthly budget", message: "Choose a budget to start tracking your spending limit.", tone: "info" });
     }
 
     var nowY = today.getFullYear(), nowM = today.getMonth() + 1;
@@ -1487,18 +1547,18 @@
     if (previous.length > 0 && previousSpent > 0) {
       var change = Math.round(((spent - previousSpent) / previousSpent) * 100);
       var caveat = isPartial ? " (month in progress — " + today.getDate() + "/" + daysInMonth(nowY, nowM) + " days)" : "";
-      if (change > 0) cards.push({ icon: "📈", title: "Spending increased", message: "Your expenses are " + change + "% higher than last month" + caveat + ".", tone: "warning" });
-      else if (change < 0) cards.push({ icon: "📉", title: "Spending decreased", message: "Your expenses are " + Math.abs(change) + "% lower than last month" + caveat + ".", tone: "good" });
-      else cards.push({ icon: "📊", title: "Spending unchanged", message: "Your total expenses match last month" + caveat + ".", tone: "info" });
+      if (change > 0) cards.push({ icon: "↑", title: "Spending increased", message: "Your expenses are " + change + "% higher than last month" + caveat + ".", tone: "warning" });
+      else if (change < 0) cards.push({ icon: "↓", title: "Spending decreased", message: "Your expenses are " + Math.abs(change) + "% lower than last month" + caveat + ".", tone: "good" });
+      else cards.push({ icon: "=", title: "Spending unchanged", message: "Your total expenses match last month" + caveat + ".", tone: "info" });
     } else if (previous.length > 0 && spent > 0) {
-      cards.push({ icon: "📊", title: "New spending activity", message: "You recorded expenses this month, but none last month.", tone: "info" });
+      cards.push({ icon: "•", title: "New spending activity", message: "You recorded expenses this month, but none last month.", tone: "info" });
     }
 
     if (income > 0) {
       var net = round2(income - spent);
       var rate = Math.round((net / income) * 100);
       cards.push({
-        icon: net >= 0 ? "💰" : "💡",
+        icon: net >= 0 ? "✓" : "!",
         title: net >= 0 ? "Savings progress" : "Spending exceeds income",
         message: net >= 0 ? "Your savings rate is " + rate + "% this month." : "Your expenses are higher than your recorded income.",
         tone: net >= 0 ? "good" : "warning"
@@ -1507,40 +1567,25 @@
 
     var sts = computeSafeToSpend();
     if (sts.daily > 0 && sts.daysRemaining > 0) {
-      cards.push({
-        icon: "💸",
-        title: "Safe to spend",
-        message: "About " + fmt.format(sts.daily) + "/day for the next " + sts.daysRemaining + " day" + (sts.daysRemaining === 1 ? "" : "s") + ".",
-        tone: "info"
-      });
+      cards.push({ icon: "₹", title: "Safe to spend", message: "About " + fmt.format(sts.daily) + "/day for the next " + sts.daysRemaining + " day" + (sts.daysRemaining === 1 ? "" : "s") + ".", tone: "info" });
     } else if (sts.daily < 0) {
-      cards.push({
-        icon: "🚧",
-        title: "Over-committed",
-        message: "Your upcoming obligations exceed your available funds by " + fmt.format(-sts.usable) + ".",
-        tone: "warning"
-      });
+      cards.push({ icon: "!", title: "Over-committed", message: "Your upcoming obligations exceed your available funds by " + fmt.format(-sts.usable) + ".", tone: "warning" });
     }
 
     if (sts.upcomingList.length) {
       var next = sts.upcomingList[0];
-      cards.push({
-        icon: "🔁",
-        title: "Upcoming payment",
-        message: next.desc + " (" + fmt.format(next.amount) + ") due " + next.date + ".",
-        tone: "info"
-      });
+      cards.push({ icon: "↻", title: "Upcoming payment", message: next.desc + " (" + fmt.format(next.amount) + ") due " + next.date + ".", tone: "info" });
     }
 
     if (cards.length === 0) {
-      cards.push({ icon: "📝", title: "Start tracking", message: "Add transactions to unlock your financial insights.", tone: "info" });
+      cards.push({ icon: "•", title: "Start tracking", message: "Add transactions to unlock your financial insights.", tone: "info" });
     }
 
     host.innerHTML = cards.map(function (card) {
       return '<article class="insight-card ' + card.tone + '">' +
         '<span class="insight-icon" aria-hidden="true">' + card.icon + '</span>' +
-        '<h3>' + esc(card.title) + '</h3>' +
-        '<p>' + esc(card.message) + '</p>' +
+        '<div><h3>' + esc(card.title) + '</h3>' +
+        '<p>' + esc(card.message) + '</p></div>' +
         '</article>';
     }).join("");
   }
@@ -1569,7 +1614,7 @@
       var cls = overdue ? "overdue" : soon ? "soon" : "";
       return '<div class="recurring-card ' + cls + '">' +
         '<div class="recurring-top">' +
-        '<span class="chip"><i style="background:' + catMeta.c + '"></i>' + catMeta.i + ' ' + esc(r.cat) + '</span>' +
+        '<span class="chip"><i style="background:' + catMeta.c + '"></i>' + esc(r.cat) + '</span>' +
         '<span class="recurring-freq">' + esc(r.freq) + '</span>' +
         '</div>' +
         '<h3>' + esc(r.desc) + '</h3>' +
@@ -1578,7 +1623,7 @@
         (occ ? '<div class="recurring-next">Next: ' + iso(occ) + (daysTo != null ? ' · in ' + daysTo + ' day' + (daysTo === 1 ? "" : "s") : '') + '</div>' : '') +
         '<div class="recurring-actions">' +
         '<button class="btn" type="button" data-recedit="' + r.id + '">Edit</button>' +
-        '<button class="btn" type="button" data-recdel="' + r.id + '">Delete</button>' +
+        '<button class="btn ghost" type="button" data-recdel="' + r.id + '">Delete</button>' +
         '</div>' +
         '</div>';
     }).join("");
@@ -1678,7 +1723,7 @@
   }
 
   /* ============================================================
-     Refresh orchestration
+     Refresh
   ============================================================ */
   function refreshAll() {
     renderStats();
@@ -1688,37 +1733,16 @@
     renderTrend();
     renderCategoryBudgets();
     renderRecurring();
+    renderGoals();
     renderTable();
   }
 
   /* ============================================================
-     Theme
+     Theme — enforce dark mode
   ============================================================ */
-  function applyTheme(theme) {
-    if (theme !== "dark" && theme !== "light") theme = "dark";
-    document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
-    var btn = $("themeToggle");
-    if (btn) {
-      btn.textContent = theme === "dark" ? "🌙" : "☀️";
-      btn.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
-      btn.setAttribute("aria-pressed", String(theme === "light"));
-    }
-  }
-  function loadTheme() {
-    var saved = "dark";
-    try {
-      var v = localStorage.getItem(THEME_KEY);
-      if (v === "dark" || v === "light") saved = v;
-      else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) saved = "light";
-    } catch (e) { /* ignore */ }
-    applyTheme(saved);
-  }
-  function toggleTheme() {
-    var cur = document.documentElement.getAttribute("data-theme");
-    applyTheme(cur === "dark" ? "light" : "dark");
-    paint();
-    renderTrend();
+  function applyTheme() {
+    document.documentElement.setAttribute("data-theme", "dark");
+    try { localStorage.removeItem(THEME_KEY); } catch (e) { }
   }
 
   /* ============================================================
@@ -1914,10 +1938,8 @@
       e.target.value = "";
     });
 
-    $("themeToggle").addEventListener("click", toggleTheme);
-
     $("clearData").addEventListener("click", function () {
-      if (!state.tx.length && !state.budget && !Object.keys(state.catBudgets).length && !state.recurring.length) {
+      if (!state.tx.length && !state.budget && !Object.keys(state.catBudgets).length && !state.recurring.length && !(state.goals || []).length) {
         showToast("Nothing to clear.");
         return;
       }
@@ -1925,7 +1947,8 @@
         "Clear all data?",
         "This will permanently delete " + state.tx.length + " transaction" +
         (state.tx.length === 1 ? "" : "s") + ", " + state.recurring.length + " recurring item" +
-        (state.recurring.length === 1 ? "" : "s") + ", and reset your budgets. This cannot be undone.",
+        (state.recurring.length === 1 ? "" : "s") + ", " + (state.goals || []).length + " goal" +
+        ((state.goals || []).length === 1 ? "" : "s") + ", and reset your budgets. This cannot be undone.",
         "Delete everything", "Cancel",
         function () {
           var snapshot = JSON.parse(JSON.stringify(state));
@@ -1933,10 +1956,17 @@
           state.budget = 0;
           state.catBudgets = {};
           state.recurring = [];
+          state.goals = [];
           state.sts = { nextIncomeDate: "", nextIncomeAmount: 0, savingsGoal: 0 };
           state.lastIdSeq = 0;
           if (!save()) {
-            state = snapshot;
+            state.tx = snapshot.tx;
+            state.budget = snapshot.budget;
+            state.catBudgets = snapshot.catBudgets;
+            state.recurring = snapshot.recurring;
+            state.goals = snapshot.goals;
+            state.sts = snapshot.sts;
+            state.lastIdSeq = snapshot.lastIdSeq;
             showToast("Clear failed: storage is unavailable.");
             refreshAll();
             return;
@@ -2000,6 +2030,42 @@
       });
     });
 
+    $("addGoal").addEventListener("click", function () {
+      $("goalForm").hidden = !$("goalForm").hidden;
+      if (!$("goalForm").hidden) {
+        resetGoalForm();
+        $("goalForm").hidden = false;
+        $("goalName").focus();
+      }
+    });
+    $("goalSave").addEventListener("click", saveGoal);
+    $("goalCancel").addEventListener("click", resetGoalForm);
+    $("goalGrid").addEventListener("click", function (e) {
+      var editBtn = e.target.closest("[data-goaledit]");
+      if (editBtn) { startEditGoal(Number(editBtn.dataset.goaledit)); return; }
+      var delBtn = e.target.closest("[data-goaldel]");
+      if (!delBtn) return;
+      var id = Number(delBtn.dataset.goaldel);
+      var idx = (state.goals || []).findIndex(function (g) { return g.id === id; });
+      if (idx < 0) return;
+      var removed = state.goals[idx];
+      var snapshot = state.goals.slice();
+      state.goals.splice(idx, 1);
+      if (!save()) {
+        state.goals = snapshot;
+        showToast("Delete failed: storage is unavailable.");
+        return;
+      }
+      renderGoals();
+      showToast("Removed “" + removed.name + "”", "Undo", function () {
+        if (!state.goals.some(function (g) { return g.id === removed.id; })) {
+          state.goals.push(removed);
+          save();
+          renderGoals();
+        }
+      });
+    });
+
     var resizeTimer;
     window.addEventListener("resize", function () {
       clearTimeout(resizeTimer);
@@ -2010,7 +2076,10 @@
       if (!e) return;
       var backdrop = $("modal");
       if (!backdrop.hidden) return;
-      if (e.key === "Escape" && !$("bot").hidden) { toggleBot(false); $("fab").focus(); return; }
+      if (e.key === "Escape") {
+        var panel = $("aiPanel");
+        if (panel && !panel.hidden) { closeAI(); return; }
+      }
       var tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "/") { e.preventDefault(); $("q").focus(); }
@@ -2047,95 +2116,413 @@
           refreshAll();
         }
       });
-    }, reduceMotion ? 0 : 200);
+    }, reduceMotion ? 0 : 180);
   }
 
   /* ============================================================
-     Help assistant
+     Ledgerline AI — Gemini-powered assistant
   ============================================================ */
-  var KB = [
-    { k: ["budget", "limit", "set", "spend"], a: "Open the budget box at the top. The bar is green under 75%, amber at 75%, and red at 100%. Exceeding your budget raises a warning before an expense is saved." },
-    { k: ["category", "target", "catbudget"], a: "Use the Category budgets panel to set a monthly target for each expense category. Set a value and it saves automatically." },
-    { k: ["add", "transaction", "expense", "income", "record", "new"], a: "Pick Expense or Income, fill description, amount, date, and a category, then press Add transaction. Shortcut: press N." },
-    { k: ["edit", "change", "update", "modify"], a: "Click Edit next to a transaction to load it into the form. Change any field and press Save changes." },
-    { k: ["delete", "remove", "undo"], a: "Click × at the end of a row, then use Undo within a few seconds in the toast to restore it." },
-    { k: ["filter", "category", "chart", "pie", "doughnut", "slice"], a: "Click a slice or legend item to filter the table to that category. Press Reset filters to clear." },
-    { k: ["search", "find"], a: "Type in the search box or press / to focus it. Search matches descriptions in the selected month." },
-    { k: ["sort", "order"], a: "Click a column header to sort; click again to reverse." },
-    { k: ["month", "date", "previous", "last", "year"], a: "Use the month picker above the table to view any month. Historical transactions are stored with their actual date." },
-    { k: ["trend", "monthly", "chart"], a: "The Monthly expense trends chart shows all 12 months of the selected year. The Y-axis scale is based on the highest monthly income for that year. Use the Year selector to switch." },
-    { k: ["csv", "export", "download"], a: "Export CSV downloads the currently-selected month's transactions." },
-    { k: ["backup", "json", "restore", "import"], a: "Use Backup JSON to download a full snapshot of your data. Restore lets you replace your current data from a backup file. Restore cannot be undone." },
-    { k: ["safe", "spend", "sts", "planner"], a: "Safe to Spend estimates how much you can spend per day until your next income. Click Settings on the Safe to Spend panel to configure your next income date, amount, and savings goal." },
-    { k: ["recurring", "subscription", "rent", "repeat", "monthly"], a: "Add recurring items (rent, subscriptions, regular income) in the Recurring & upcoming panel. These are reminders — they are not auto-charged. They are included in your Safe to Spend calculation." },
-    { k: ["theme", "dark", "light", "mode"], a: "Use the 🌙/☀️ button in the header to switch between dark and light themes. Your choice is remembered." },
-    { k: ["save", "data", "persist", "lost", "storage"], a: "Your data is saved in this browser's localStorage. Clearing site data or switching browsers will remove it. Use Backup JSON to keep a portable copy." },
-    { k: ["overspend", "balance", "negative", "exceed", "available"], a: "When you add an expense that exceeds the income recorded for that month, Ledgerline warns you before saving." },
-    { k: ["hi", "hello", "hey", "help"], a: "Hi! Ask about budgets, Safe to Spend, recurring items, backups, adding or editing transactions, the trend chart, sorting, export, or overspending." }
+
+  var AI = {
+    open: false,
+    sending: false,
+    messages: [],
+    pendingUserText: null,
+    lastFailedText: null,
+    lastFailedEl: null,
+    lastContext: null
+  };
+
+  var SUGGESTIONS = [
+    "Analyze my spending this month",
+    "Where am I spending the most?",
+    "How can I save more money?",
+    "Am I within my monthly budget?",
+    "Explain my Safe to Spend amount"
   ];
 
-  function botLog(text, who) {
-    var d = document.createElement("div");
-    d.className = "msg " + (who === "user" ? "user-m" : "bot-m");
-    d.textContent = text;
-    $("log").appendChild(d);
-    $("log").scrollTop = $("log").scrollHeight;
+  function aiStatus(state, text) {
+    var el = $("aiStatus");
+    var txt = $("aiStatusText");
+    if (!el || !txt) return;
+    el.classList.remove("busy", "error");
+    if (state === "busy") el.classList.add("busy");
+    if (state === "error") el.classList.add("error");
+    txt.textContent = text;
   }
-  function botAnswer(q) {
-    var words = q.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
-    var best = null, score = 0;
-    KB.forEach(function (item) {
-      var s = 0;
-      item.k.forEach(function (kw) { if (words.indexOf(kw) > -1) s += kw.length; });
-      if (s > score) { score = s; best = item; }
+
+  function aiScroll() {
+    var log = $("aiLog");
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+
+  function buildContext() {
+    var monthEl = $("month");
+    var month = (monthEl && monthEl.value) || thisMonth;
+    var monthTx = txsForMonth(month);
+    var income = sumByType(monthTx, "income");
+    var expenses = sumByType(monthTx, "expense");
+    var net = round2(income - expenses);
+
+    var byCat = categoryTotals(monthTx);
+    var catLines = EXPENSE_CATS.map(function (c) {
+      var spent = byCat[c] || 0;
+      if (!spent && !state.catBudgets[c]) return null;
+      var target = state.catBudgets[c] || 0;
+      return {
+        category: c,
+        spent: spent,
+        budget: target > 0 ? target : null,
+        pctOfTotal: expenses > 0 ? Math.round((spent / expenses) * 100) : 0
+      };
+    }).filter(Boolean);
+
+    var budget = state.budget;
+    var budgetInfo = budget > 0 ? {
+      limit: budget,
+      spent: expenses,
+      remaining: round2(budget - expenses),
+      percentUsed: Math.round((expenses / budget) * 100),
+      status: budgetStatus(expenses, budget).state
+    } : null;
+
+    var sts = computeSafeToSpend();
+
+    var stsInfo = {
+      perDay: sts.daily,
+      daysRemaining: sts.daysRemaining,
+      untilDate: sts.nextDate,
+      currentMonthBalance: sts.balance,
+      expectedIncome: sts.expectedIncome,
+      upcomingRecurringTotal: sts.upcomingRecurring,
+      upcomingRecurringList: sts.upcomingList,
+      savingsGoal: sts.savingsGoal,
+      totalUsable: sts.usable
+    };
+
+    var recurring = state.recurring.map(function (r) {
+      return { desc: r.desc, type: r.type, amount: r.amount, category: r.cat, frequency: r.freq, next: r.next };
     });
-    return best ? best.a
-      : "I'm not sure about that. Try asking about budgets, Safe to Spend, recurring items, backups, adding transactions, or exporting.";
-  }
-  function botAsk(q) {
-    q = q.trim();
-    if (!q) return;
-    if (q === ui.lastBotAnswer) return;
-    ui.lastBotAnswer = q;
-    botLog(q, "user");
-    var ind = document.createElement("div");
-    ind.className = "msg bot-m typing";
-    ind.innerHTML = "<span></span><span></span><span></span>";
-    $("log").appendChild(ind);
-    $("log").scrollTop = $("log").scrollHeight;
-    setTimeout(function () {
-      if (ind.parentNode) ind.parentNode.removeChild(ind);
-      botLog(botAnswer(q), "bot");
-    }, reduceMotion ? 0 : 500);
-  }
-  function toggleBot(open) {
-    $("bot").hidden = !open;
-    $("fab").setAttribute("aria-expanded", String(open));
-    if (open) $("botin").focus();
-  }
-  function initBot() {
-    $("fab").addEventListener("click", function () { toggleBot($("bot").hidden); });
-    $("botclose").addEventListener("click", function () { toggleBot(false); $("fab").focus(); });
-    $("botform").addEventListener("submit", function (e) {
-      e.preventDefault();
-      botAsk($("botin").value);
-      $("botin").value = "";
+
+    var goals = (state.goals || []).map(function (g) {
+      return { name: g.name, saved: g.saved, target: g.target, targetDate: g.targetDate || null, percent: g.target > 0 ? Math.round(g.saved / g.target * 100) : 0 };
     });
-    ["How do I set a budget?", "What is Safe to Spend?", "Add a recurring bill", "How do backups work?"].forEach(function (t) {
+
+    var sortedTx = monthTx.slice().sort(function (a, b) {
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id;
+    }).slice(0, 60).map(function (t) {
+      return { date: t.date, desc: t.desc, type: t.type, category: t.cat, amount: t.amount };
+    });
+
+    var prevMonth = prevMonthOf(month);
+    var prevTx = txsForMonth(prevMonth);
+    var prevExpenses = sumByType(prevTx, "expense");
+    var prevIncome = sumByType(prevTx, "income");
+
+    var last3 = [];
+    for (var i = 1; i <= 3; i++) {
+      var dd = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
+      dd.setMonth(dd.getMonth() - i);
+      var pm = iso(dd).slice(0, 7);
+      var list = txsForMonth(pm);
+      last3.push({
+        month: pm,
+        income: sumByType(list, "income"),
+        expenses: sumByType(list, "expense"),
+        txCount: list.length
+      });
+    }
+
+    return {
+      app: "Ledgerline",
+      currency: "INR (₹)",
+      selectedMonth: month,
+      currentMonthSummary: {
+        income: income,
+        expenses: expenses,
+        net: net,
+        savingsRatePercent: income > 0 ? Math.round((net / income) * 100) : null,
+        transactionCount: monthTx.length
+      },
+      categoryBreakdown: catLines,
+      monthlyBudget: budgetInfo,
+      safeToSpend: stsInfo,
+      recurringItems: recurring,
+      financialGoals: goals,
+      previousMonth: { month: prevMonth, income: prevIncome, expenses: prevExpenses },
+      trailingThreeMonths: last3,
+      transactionsThisMonth: sortedTx,
+      totalRecordsInAccount: state.tx.length
+    };
+  }
+
+  function renderAIText(raw) {
+    var escaped = esc(raw || "").replace(/\r\n/g, "\n");
+    var lines = escaped.split("\n");
+    var out = [];
+    var listOpen = false;
+
+    function inline(s) {
+      return s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    }
+
+    lines.forEach(function (line) {
+      var m = line.match(/^\s*[-*]\s+(.*)$/);
+      if (m) {
+        if (!listOpen) { out.push('<ul class="ai-list">'); listOpen = true; }
+        out.push("<li>" + inline(m[1]) + "</li>");
+      } else {
+        if (listOpen) { out.push("</ul>"); listOpen = false; }
+        if (line.trim() === "") out.push("<br>");
+        else out.push("<div>" + inline(line) + "</div>");
+      }
+    });
+    if (listOpen) out.push("</ul>");
+    return out.join("");
+  }
+
+  function appendUserMessage(text) {
+    var el = document.createElement("div");
+    el.className = "ai-msg user";
+    el.textContent = text;
+    $("aiLog").appendChild(el);
+    aiScroll();
+  }
+
+  function appendBotMessage(text) {
+    var el = document.createElement("div");
+    el.className = "ai-msg bot";
+    el.innerHTML = renderAIText(text);
+    $("aiLog").appendChild(el);
+    aiScroll();
+    return el;
+  }
+
+  function appendErrorMessage(text, retryText) {
+    var el = document.createElement("div");
+    el.className = "ai-msg bot error";
+    el.textContent = text;
+    if (retryText) {
+      var retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "ai-retry";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+        sendAIMessage(retryText);
+      });
+      el.appendChild(document.createElement("br"));
+      el.appendChild(retry);
+    }
+    $("aiLog").appendChild(el);
+    aiScroll();
+  }
+
+  function showTyping() {
+    var el = document.createElement("div");
+    el.className = "ai-typing";
+    el.id = "aiTyping";
+    el.innerHTML = "<span></span><span></span><span></span>";
+    $("aiLog").appendChild(el);
+    aiScroll();
+  }
+  function hideTyping() {
+    var el = $("aiTyping");
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function clearSuggestions() {
+    $("aiSuggest").innerHTML = "";
+  }
+
+  function renderSuggestions() {
+    var host = $("aiSuggest");
+    host.innerHTML = "";
+    SUGGESTIONS.forEach(function (s) {
       var b = document.createElement("button");
       b.type = "button";
-      b.textContent = t;
-      b.addEventListener("click", function () { botAsk(t); });
-      $("quick").appendChild(b);
+      b.textContent = s;
+      b.addEventListener("click", function () {
+        if (AI.sending) return;
+        sendAIMessage(s);
+      });
+      host.appendChild(b);
     });
-    botLog("Hi, I'm the Ledgerline helper. Ask me how anything works, or tap a suggestion below.", "bot");
+  }
+
+  function updateSendState() {
+    var input = $("aiInput");
+    var send = $("aiSend");
+    var hasText = input.value.trim().length > 0;
+    send.disabled = AI.sending || !hasText;
+  }
+
+  async function sendAIMessage(text) {
+    text = (text || "").trim();
+    if (!text || AI.sending) return;
+
+    AI.sending = true;
+    clearSuggestions();
+    appendUserMessage(text);
+    AI.messages.push({ role: "user", text: text });
+    $("aiInput").value = "";
+    autosizeInput();
+    updateSendState();
+    aiStatus("busy", "Thinking…");
+    showTyping();
+
+    var history = AI.messages.slice(0, -1).slice(-10);
+
+    try {
+      var ctx = buildContext();
+      AI.lastContext = ctx;
+
+      var res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          context: ctx,
+          history: history
+        })
+      });
+
+      var data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+
+      if (!res.ok) {
+        var errMsg = (data && data.error) || ("Request failed (" + res.status + ").");
+        throw new Error(errMsg);
+      }
+      if (!data || typeof data.reply !== "string" || !data.reply.trim()) {
+        throw new Error("The AI returned an empty response. Please try again.");
+      }
+
+      hideTyping();
+      appendBotMessage(data.reply);
+      AI.messages.push({ role: "model", text: data.reply });
+      AI.lastFailedText = null;
+      aiStatus("ready", "Ready");
+    } catch (err) {
+      hideTyping();
+      var friendly = err && err.message ? err.message : "Something went wrong.";
+      if (err instanceof TypeError) {
+        friendly = "I can't reach the server. Check your connection and that the backend is running.";
+      }
+      appendErrorMessage(friendly, text);
+      AI.lastFailedText = text;
+      aiStatus("error", "Error");
+      if (AI.messages.length && AI.messages[AI.messages.length - 1].role === "user") {
+        AI.messages.pop();
+      }
+    } finally {
+      AI.sending = false;
+      updateSendState();
+      aiScroll();
+    }
+  }
+
+  function autosizeInput() {
+    var ta = $("aiInput");
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(120, ta.scrollHeight) + "px";
+  }
+
+  function openAI() {
+    var panel = $("aiPanel");
+    panel.hidden = false;
+    AI.open = true;
+    $("aiOpen").setAttribute("aria-expanded", "true");
+    if (!AI.messages.length) {
+      appendBotMessage(
+        "Hi! I'm Ledgerline AI. I can analyze your real spending, compare it with your budget, explain Safe to Spend, and suggest ways to save. Ask me anything about your finances or how Ledgerline works."
+      );
+      renderSuggestions();
+    }
+    setTimeout(function () { $("aiInput").focus(); }, 50);
+  }
+
+  function closeAI() {
+    var panel = $("aiPanel");
+    panel.hidden = true;
+    AI.open = false;
+    $("aiOpen").setAttribute("aria-expanded", "false");
+    $("aiOpen").focus();
+  }
+
+  function newChat() {
+    AI.messages = [];
+    AI.lastFailedText = null;
+    AI.lastContext = null;
+    $("aiLog").innerHTML = "";
+    aiStatus("ready", "Ready");
+    appendBotMessage(
+      "Started a new conversation. What would you like to know about your finances?"
+    );
+    renderSuggestions();
+    updateSendState();
+  }
+
+  function initAI() {
+    $("aiOpen").addEventListener("click", function () {
+      if (AI.open) closeAI();
+      else openAI();
+    });
+    $("aiClose").addEventListener("click", closeAI);
+    $("aiNewChat").addEventListener("click", newChat);
+
+    $("aiForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      sendAIMessage($("aiInput").value);
+    });
+
+    var input = $("aiInput");
+    input.addEventListener("input", function () { autosizeInput(); updateSendState(); });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        if (!AI.sending && input.value.trim()) {
+          sendAIMessage(input.value);
+        }
+      }
+    });
+
+    updateSendState();
+  }
+
+  /* ============================================================
+     Rail active state
+  ============================================================ */
+  function initRail() {
+    var links = document.querySelectorAll(".rail-link:not(.rail-ai)");
+    if (!links.length) return;
+    links.forEach(function (a) {
+      a.addEventListener("click", function () {
+        links.forEach(function (x) { x.classList.remove("active"); });
+        a.classList.add("active");
+      });
+    });
+    var ids = ["overview", "section-charts", "section-transactions", "section-budgets", "section-goals"];
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function (x) {
+              x.classList.toggle("active", x.getAttribute("href") === "#" + entry.target.id);
+            });
+          }
+        });
+      }, { rootMargin: "-40% 0px -55% 0px" });
+      ids.forEach(function (id) { var el = document.getElementById(id); if (el) io.observe(el); });
+    }
   }
 
   /* ============================================================
      Bootstrap
   ============================================================ */
   function init() {
-    loadTheme();
+    applyTheme();
     load();
 
     $("date").value = todayISO();
@@ -2154,7 +2541,8 @@
     loadDraft();
     updatePreview();
     bindEvents();
-    initBot();
+    initAI();
+    initRail();
 
     refreshAll();
   }

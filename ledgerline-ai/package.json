@@ -1,0 +1,21 @@
+{
+  "name": "ledgerline-ai",
+  "version": "1.0.0",
+  "description": "Ledgerline personal finance dashboard with a Gemini-powered assistant",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.30.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0"
+  }
+}
